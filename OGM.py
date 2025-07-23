@@ -30,16 +30,23 @@ class OGM:
             self.lidar_range_max = data["range_max"] # maximum range value [m]
             self.lidar_ranges = data["ranges"]       # range data [m] (Note: values < range_min or > range_max should be discarded)
             self.lidar_stamps = data["time_stamps"]  # acquisition times of the lidar scans in seconds
-    def bressenham_mark_Cells(self, scan, current_pose):
+            
+    def plot(self, x, y):
+        cell_x, cell_y = (int(np.ceil((x - self.MAP['xmin']) / self.MAP['res']) - 1), \
+                  int(np.ceil((y - self.MAP['ymin']) / self.MAP['res']) - 1))
+        self.MAP['map'][cell_x][cell_y]=1
         
-        print(scan,len(scan))
+       
+    def bressenham_mark_Cells(self, scan, current_pose):
+        print(scan,len(scan),"--------***")
         angles = np.arange(self.lidar_angle_min,self.lidar_angle_max+self.lidar_angle_increment,self.lidar_angle_increment)*np.pi/180.0
         ranges = scan
 
+
         # take valid indices
         indValid = np.logical_and((ranges < self.lidar_range_max),(ranges> self.lidar_range_min))
-        print(indValid,"indvalidOGM")
-        print(len(angles), len(indValid))
+        # print(indValid,"indvalidOGM")
+        # print(len(angles), len(indValid))
         ranges = ranges[indValid]
         angles = angles[indValid]
         
@@ -47,25 +54,13 @@ class OGM:
         xs0 = ranges*np.cos(angles)
         ys0 = ranges*np.sin(angles)
         
-        # convert position in the map frame here 
-        Y = np.stack((xs0,ys0))
         
-        # convert from meters to cells
-        xis = np.ceil((xs0 - self.MAP['xmin']) / self.MAP['res'] ).astype(np.int16)-1
-        yis = np.ceil((ys0 - self.MAP['ymin']) / self.MAP['res'] ).astype(np.int16)-1
+        numberofhits=len(xs0)
+        for i in range(numberofhits):
+            self.plot(xs0[i],ys0[i])
+                
         
-        # build an arbitrary map 
-        indGood = np.logical_and(np.logical_and(np.logical_and((xis > 1), (yis > 1)), (xis < self.MAP['sizex'])), (yis < self.MAP['sizey']))
-        self.MAP['map'][xis[indGood[0]],yis[indGood[0]]]=1
-            
-        x_im = np.arange(self.MAP['xmin'],self.MAP['xmax']+self.MAP['res'],self.MAP['res']) #x-positions of each pixel of the map
-        y_im = np.arange(self.MAP['ymin'],self.MAP['ymax']+self.MAP['res'],self.MAP['res']) #y-positions of each pixel of the map
-
-        x_range = np.arange(-0.2,0.2+0.05,0.05)
-        y_range = np.arange(-0.2,0.2+0.05,0.05)
-
-
-
+        
 
         #plot original lidar points
         fig1 = plt.figure()
@@ -79,6 +74,8 @@ class OGM:
         fig2 = plt.figure()
         plt.imshow(self.MAP['map'],cmap="hot")
         plt.title("Occupancy grid map")
+    def showPlots(self):
+        plt.show(block=True)
 
         
         
@@ -86,7 +83,8 @@ if __name__ == '__main__':
     #   util.show_lidar()
     #   util. test_mapCorrelation()
     ogm=OGM()
-    print(ogm.lidar_ranges[0])
-    ogm.bressenham_mark_Cells(ogm.lidar_ranges[0],0)
+    print(len(ogm.lidar_ranges))
+    print(ogm.lidar_ranges[:,600],"-----------")
+    ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,4000],[0,0])
     #   util. test_bresenham2D()
     ogm.showPlots()

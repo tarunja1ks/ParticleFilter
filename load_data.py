@@ -27,7 +27,9 @@ if __name__ == '__main__':
   #   rgb_stamps = data["rgb_time_stamps"] # acquisition times of the rgb images
 
 print(lidar_ranges[0])
+print(len(lidar_stamps))
+print(max(lidar_stamps)-min(lidar_stamps))
 print(len(set(lidar_stamps)))
-print(len(lidar_ranges[1]))
+print(len(lidar_ranges))
 print(len(imu_angular_velocity[0]))
 

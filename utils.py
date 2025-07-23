@@ -215,8 +215,8 @@ class utils:
     
     
 
-# if __name__ == '__main__':
-#   show_lidar()
-#   # test_mapCorrelation()
-#   # test_bresenham2D()
-#   plt.show(block=True)
+if __name__ == '__main__':
+  utils.show_lidar()
+  utils.test_mapCorrelation()
+  utils.test_bresenham2D()
+  plt.show(block=True)
