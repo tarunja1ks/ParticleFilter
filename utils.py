@@ -1,8 +1,9 @@
+import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt; plt.ion()
 from mpl_toolkits.mplot3d import Axes3D
 import time
-
+matplotlib.use('TkAgg')
 def tic():
   return time.time()
 def toc(tstart, name="Operation"):
@@ -106,6 +107,7 @@ def test_bresenham2D():
 	  x,y = bresenham2D(sx, sy, 500, 200)
   print("1000 raytraces: --- %s seconds ---" % (time.time() - start_time))
 
+
 def test_mapCorrelation():
   angles = np.arange(-135,135.25,0.25)*np.pi/180.0
   ranges = np.load("test_ranges.npy")
@@ -186,11 +188,11 @@ def test_mapCorrelation():
   
   #plot correlation
   fig3 = plt.figure()
-  ax3 = fig3.gca(projection='3d')
+  ax3 = fig3.add_subplot(111, projection='3d')
   X, Y = np.meshgrid(np.arange(0,9), np.arange(0,9))
   ax3.plot_surface(X,Y,c,linewidth=0,cmap=plt.cm.jet, antialiased=False,rstride=1, cstride=1)
   plt.title("Correlation coefficient map")  
-  plt.show()
+  
   
   
 def show_lidar():
@@ -204,11 +206,11 @@ def show_lidar():
   ax.set_rlabel_position(-22.5)  # get radial labels away from plotted line
   ax.grid(True)
   ax.set_title("Lidar scan data", va='bottom')
-  plt.show()
+  
 	
 
 if __name__ == '__main__':
   show_lidar()
   test_mapCorrelation()
   test_bresenham2D()
-
+  plt.show(block=True)
