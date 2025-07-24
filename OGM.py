@@ -15,13 +15,16 @@ class OGM:
         # init MAP
         self.MAP = {}
         self.MAP['res']   = 0.05 #meters
-        self.MAP['xmin']  = -20  #meters
-        self.MAP['ymin']  = -20
-        self.MAP['xmax']  =  20
-        self.MAP['ymax']  =  20 
+        self.MAP['xmin']  = -25  #meters
+        self.MAP['ymin']  = -25
+        self.MAP['xmax']  =  25
+        self.MAP['ymax']  =  25 
         self.MAP['sizex']  = int(np.ceil((self.MAP['xmax'] - self.MAP['xmin']) / self.MAP['res'] + 1)) #cells
         self.MAP['sizey']  = int(np.ceil((self.MAP['ymax'] - self.MAP['ymin']) / self.MAP['res'] + 1))
         self.MAP['map'] = np.zeros((self.MAP['sizex'],self.MAP['sizey']),dtype=np.float32) #DATA TYPE: char or int8
+        fig2 = plt.figure()
+        self.ogm_map = plt.imshow(self.MAP['map'], cmap="gray", vmin=0, vmax=1)
+        plt.title("Occupancy grid map")
         self.sensor_x_r = 0.30183  
         self.sensor_y_r = 0.0
         self.sensor_yaw_r = 0.0
@@ -55,7 +58,6 @@ class OGM:
         print('here')
     def bressenham_mark_Cells(self, scan, current_pose):
         # x0,y0=self.meter_to_cell(current_pose[0],current_pose[1])
-        print(scan,len(scan),"--------***")
         angles = np.arange(self.lidar_angle_min,self.lidar_angle_max+self.lidar_angle_increment,self.lidar_angle_increment)*np.pi/180.0
         ranges = scan
 
@@ -81,6 +83,7 @@ class OGM:
         for i in range(numberofhits): # converting scans in frame relative to robot center
             scans[i].setPose(np.matmul(scans[i].getPose(),robot_Position_lidar.getPose()))
             
+        self.MAP['map'] = np.zeros((self.MAP['sizex'],self.MAP['sizey']),dtype=np.float32)
         for i in scans:
             x,y=self.meter_to_cell(i.getPose())
             rx,ry=self.meter_to_cell(current_pose.getPose()) # robot x and robot y
@@ -92,20 +95,20 @@ class OGM:
         
 
         #plot original lidar points
-        fig1 = plt.figure()
-        plt.plot(xs0,ys0,'.k')
-        plt.xlabel("x")
-        plt.ylabel("y")
-        plt.title("Laser reading")
-        plt.axis('equal')
+        # fig1 = plt.figure()
+        # plt.plot(xs0,ys0,'.k')
+        # plt.xlabel("x")
+        # plt.ylabel("y")
+        # plt.title("Laser reading")
+        # plt.axis('equal')
         
         #plot map
-        fig2 = plt.figure()
-        plt.imshow(self.MAP['map'],cmap="gray",vmin=0,vmax=1)
-        plt.title("Occupancy grid map")
     def showPlots(self):
-        plt.show(block=True)
-
+        # plt.show(block=True)
+        plt.show()
+    def updatePlot(self):
+        self.ogm_map.set_data(self.MAP['map'])
+        plt.pause(0.05)
         
         
 if __name__ == '__main__':
@@ -113,6 +116,10 @@ if __name__ == '__main__':
     #   util. test_mapCorrelation()
     ogm=OGM()
     robot_pose=Pose(0,0,0)
-    ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],robot_pose)
-    #   util. test_bresenham2D()
     ogm.showPlots()
+    for i in range(0,4962,10):       
+        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,i],robot_pose)
+        ogm.updatePlot()
+        print(i)
+        
+        
