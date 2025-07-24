@@ -6,6 +6,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import time
 from fractions import Fraction
 from Pose import Pose
+import math
 
 matplotlib.use('TkAgg')
 
@@ -22,8 +23,10 @@ class OGM:
         self.MAP['sizex']  = int(np.ceil((self.MAP['xmax'] - self.MAP['xmin']) / self.MAP['res'] + 1)) #cells
         self.MAP['sizey']  = int(np.ceil((self.MAP['ymax'] - self.MAP['ymin']) / self.MAP['res'] + 1))
         self.MAP['map'] = np.zeros((self.MAP['sizex'],self.MAP['sizey']),dtype=np.float32) #DATA TYPE: char or int8
+        
+        
         fig2 = plt.figure()
-        self.ogm_map = plt.imshow(self.MAP['map'], cmap="gray", vmin=0, vmax=1)
+        self.ogm_map = plt.imshow(self.MAP['map'], cmap="gray", vmin=-2, vmax=5)
         plt.title("Occupancy grid map")
         self.sensor_x_r = 0.30183  
         self.sensor_y_r = 0.0
@@ -52,6 +55,21 @@ class OGM:
     
     def plot(self, x, y,value=1):
         self.MAP['map'][x][y]=value
+    
+    def ogm_plot(self,x,y, occupied=False):
+        confidence=0.85 # confidence level of the sensor
+        if(occupied):
+            odds=confidence/(1-confidence)
+        else:
+            odds=(1-confidence)/confidence
+        self.Map['map'][x][y]+=math.log(odds)
+        
+        
+        
+        
+        
+        
+        
         
     def bressenham_mark_Cells(self, scan, current_pose):
         # x0,y0=self.meter_to_cell(current_pose[0],current_pose[1])
@@ -86,20 +104,11 @@ class OGM:
             rx,ry=self.meter_to_cell(current_pose.getPose()) # robot x and robot y
             scan_intersect=util.bresenham2D(rx,ry,x,y)
             intersection_point_count=len(scan_intersect[0])
-            for j in range(intersection_point_count):
-                self.plot(int(scan_intersect[0][j]),int(scan_intersect[1][j]),0.05)
-            self.plot(x,y)
+            for j in range(intersection_point_count-1):
+                self.plot(int(scan_intersect[0][j]),int(scan_intersect[1][j]),False)
+            self.plot(x,y,True)
         
 
-        #plot original lidar points
-        # fig1 = plt.figure()
-        # plt.plot(xs0,ys0,'.k')
-        # plt.xlabel("x")
-        # plt.ylabel("y")
-        # plt.title("Laser reading")
-        # plt.axis('equal')
-        
-        #plot map
     def showPlots(self):
         # plt.show(block=True)
         plt.show()
@@ -114,7 +123,7 @@ if __name__ == '__main__':
     ogm=OGM()
     robot_pose=Pose(0,0,0)
     ogm.showPlots()
-    for i in range(0,4962,10):       
+    for i in range(0,340,2):       # 340 is stagnant limit for ogm testing
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,i],robot_pose)
         ogm.updatePlot()
         print(i)
