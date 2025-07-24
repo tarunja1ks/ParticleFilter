@@ -53,9 +53,6 @@ class OGM:
     def plot(self, x, y,value=1):
         self.MAP['map'][x][y]=value
         
-    def lidar_to_robot_frame(lidar_frame):
-        
-        print('here')
     def bressenham_mark_Cells(self, scan, current_pose):
         # x0,y0=self.meter_to_cell(current_pose[0],current_pose[1])
         angles = np.arange(self.lidar_angle_min,self.lidar_angle_max+self.lidar_angle_increment,self.lidar_angle_increment)*np.pi/180.0
