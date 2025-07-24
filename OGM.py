@@ -26,7 +26,7 @@ class OGM:
         
         
         fig2 = plt.figure()
-        self.ogm_map = plt.imshow(self.MAP['map'], cmap="gray", vmin=-2, vmax=5)
+        self.ogm_map = plt.imshow(self.MAP['map'], cmap="gray", vmin=-5, vmax=5)
         plt.title("Occupancy grid map")
         self.sensor_x_r = 0.30183  
         self.sensor_y_r = 0.0
@@ -62,7 +62,7 @@ class OGM:
             odds=confidence/(1-confidence)
         else:
             odds=(1-confidence)/confidence
-        self.Map['map'][x][y]+=math.log(odds)
+        self.MAP['map'][x][y]+=math.log(odds)
         
         
         
@@ -105,8 +105,8 @@ class OGM:
             scan_intersect=util.bresenham2D(rx,ry,x,y)
             intersection_point_count=len(scan_intersect[0])
             for j in range(intersection_point_count-1):
-                self.plot(int(scan_intersect[0][j]),int(scan_intersect[1][j]),False)
-            self.plot(x,y,True)
+                self.ogm_plot(int(scan_intersect[0][j]),int(scan_intersect[1][j]),False)
+            self.ogm_plot(x,y,True)
         
 
     def showPlots(self):
@@ -127,5 +127,14 @@ if __name__ == '__main__':
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,i],robot_pose)
         ogm.updatePlot()
         print(i)
+    import sys
+    
+    sys.stdout=open("output.txt","w")
+    m=ogm.MAP['map']
+    for i in m:
+        output=""
+        for j in i:
+            output+=str(j)+" "
+        print(output)
         
         
