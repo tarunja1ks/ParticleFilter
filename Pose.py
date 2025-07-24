@@ -1,0 +1,10 @@
+import numpy as np
+import math
+class Pose:
+    def __init__(self,x,y,h):
+        self.pose=np.asarray([[math.cos(h), -math.sin(h),x],[math.sin(h),math.cos(h),y],[0,0,1]])
+        print(self.pose)
+    def getPose(self):
+        return self.pose
+    def setPose(self,pose):
+        self.pose=pose
