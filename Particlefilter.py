@@ -63,12 +63,12 @@ ang_vel=0
 ogm=OGM()
 last_t=reads[0][1]
 ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],robot.getPoseObject())
-# ogm.showPlots()
+ogm.showPlots()
 
 
 robot_trajectory=Trajectory(robot.getPoseObject().getPoseVector())  # purely localization 
 
-
+# iterating through all of the reads to update models/displays
 for event in reads:
     dt= float(event[1])-float(last_t)
     if dt>0:
@@ -80,14 +80,14 @@ for event in reads:
         robot_trajectory.trajectory_x.append(current_pose_vector[0])
         robot_trajectory.trajectory_y.append(current_pose_vector[1])
         
-    if event[0]=="e":
+    if event[0]=="e": # encoder
         lin_vel= event[2]
-    elif event[0]=="i":
+    elif event[0]=="i": #imu
         ang_vel= event[2]
-    elif(event[0]=="l"):
+    elif(event[0]=="l"): # lidar
         print(event[2],robot.getPoseObject().getPoseVector())
-        # ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],robot.getPoseObject())
-        # ogm.updatePlot()
+        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],robot.getPoseObject())
+        ogm.updatePlot()
     else:
         continue
     last_t= event[1]
