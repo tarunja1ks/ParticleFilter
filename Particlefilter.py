@@ -1,4 +1,4 @@
-from OGM import OGM
+from OGM import OGM,Trajectory
 from utils import utils as util
 import matplotlib
 import numpy as np
@@ -66,23 +66,7 @@ ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],robot.getPoseObject())
 # ogm.showPlots()
 
 # purely localization 
-fig_traj, ax_traj = plt.subplots(1, 1, figsize=(8, 8))
-ax_traj.set_title("Robot Trajectory")
-ax_traj.set_xlabel("X [m]")
-ax_traj.set_ylabel("Y [m]")
-ax_traj.set_aspect('equal', adjustable='box') # Keep aspect ratio for trajectory
-ax_traj.grid(True)
-
-trajectory_x = []
-trajectory_y = []
-initial_pose_vector = robot.getPoseObject().getPoseVector()
-trajectory_x.append(initial_pose_vector[0])
-trajectory_y.append(initial_pose_vector[1])
-
-# Plot initial robot position and trajectory on the new trajectory axes
-robot_plot_traj, = ax_traj.plot(initial_pose_vector[0], initial_pose_vector[1], 'ro', markersize=5, label='Robot Position')
-trajectory_line_traj, = ax_traj.plot(trajectory_x, trajectory_y, 'b-', linewidth=2, label='Trajectory')
-ax_traj.legend()
+robot_trajectory=Trajectory(robot.getPoseObject().getPoseVector())
 
 
 for event in reads:
@@ -91,15 +75,11 @@ for event in reads:
         new_Pose=robot.motion_model([float(lin_vel), float(ang_vel)], dt)
         robot.setPose(Pose(new_Pose[0],new_Pose[1],new_Pose[2]))
         
-        current_pose_vector = robot.getPoseObject().getPoseVector()
-        trajectory_x.append(current_pose_vector[0])
-        trajectory_y.append(current_pose_vector[1])
-
         # update traj
-        robot_plot_traj.set_data([current_pose_vector[0]], [current_pose_vector[1]])
-        trajectory_line_traj.set_data(trajectory_x, trajectory_y)
-        ax_traj.relim() 
-        ax_traj.autoscale_view() 
+        current_pose_vector = robot.getPoseObject().getPoseVector()
+        robot_trajectory.trajectory_x.append(current_pose_vector[0])
+        robot_trajectory.trajectory_y.append(current_pose_vector[1])
+        
     if event[0]=="e":
         lin_vel= event[2]
     elif event[0]=="i":
@@ -111,9 +91,11 @@ for event in reads:
     else:
         continue
     last_t= event[1]
-    
-fig_traj.canvas.draw_idle()
-plt.pause(10000)
+
+#showing the robots trajectory
+robot_trajectory.showPlot()
+
+
     
 
 

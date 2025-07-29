@@ -137,4 +137,25 @@ if __name__ == '__main__':
             output+=str(j)+" "
         print(output)
         
+class Trajectory:
+    def __init__(self,initial_pose_vector):
+        self.fig_traj, self.ax_traj = plt.subplots(1, 1, figsize=(8, 8))
+        self.ax_traj.set_title("Robot Trajectory")
+        self.ax_traj.set_xlabel("X [m]")
+        self.ax_traj.set_ylabel("Y [m]")
+        self.ax_traj.set_aspect('equal', adjustable='box') 
+        self.ax_traj.grid(True)
         
+        # initializing robot position
+        self.trajectory_x = []
+        self.trajectory_y = []
+        self.trajectory_x.append(initial_pose_vector[0])
+        self.trajectory_y.append(initial_pose_vector[1])
+        
+        self.trajectory_line_traj, = self.ax_traj.plot(self.trajectory_x, self.trajectory_y, 'b-', linewidth=2, label='Trajectory')
+    def showPlot(self):
+        self.trajectory_line_traj.set_data(self.trajectory_x, self.trajectory_y)
+        self.ax_traj.relim() 
+        self.ax_traj.autoscale_view() 
+        self.fig_traj.canvas.draw_idle()
+        plt.pause(10000)

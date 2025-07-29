@@ -5,6 +5,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import time
 matplotlib.use('TkAgg')
 class utils: 
+  
   def tic():
     return time.time()
   
@@ -109,7 +110,7 @@ class utils:
       x,y = utils.bresenham2D(sx, sy, 500, 200)
     print("1000 raytraces: --- %s seconds ---" % (time.time() - start_time))
 
-
+  
   def test_mapCorrelation():
     angles = np.arange(-135,135.25,0.25)*np.pi/180.0
     ranges = np.load("test_ranges.npy")
