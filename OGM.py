@@ -234,4 +234,3 @@ class Trajectory:
         self.ax_traj.relim() 
         self.ax_traj.autoscale_view() 
         self.fig_traj.canvas.draw_idle()
-        plt.pause(10000)

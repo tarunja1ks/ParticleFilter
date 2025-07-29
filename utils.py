@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt; plt.ion()
 from mpl_toolkits.mplot3d import Axes3D
 import time
+import math
 matplotlib.use('TkAgg')
 class utils: 
   
@@ -214,7 +215,10 @@ class utils:
   def showPlots():
     plt.show(block=True)
     
-    
+  def sinc(x):
+    if(x==0.0):
+        return 1.0
+    return math.sin(x)/x
 
 if __name__ == '__main__':
   utils.show_lidar()
