@@ -65,8 +65,8 @@ last_t=reads[0][1]
 ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],robot.getPoseObject())
 # ogm.showPlots()
 
-# purely localization 
-robot_trajectory=Trajectory(robot.getPoseObject().getPoseVector())
+
+robot_trajectory=Trajectory(robot.getPoseObject().getPoseVector())  # purely localization 
 
 
 for event in reads:
@@ -92,8 +92,8 @@ for event in reads:
         continue
     last_t= event[1]
 
-#showing the robots trajectory
-robot_trajectory.showPlot()
+
+robot_trajectory.showPlot() #showing the robots trajectory from encoders
 
 
     
