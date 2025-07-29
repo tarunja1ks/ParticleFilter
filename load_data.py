@@ -44,19 +44,22 @@ for i in range(1,len(encoder_stamps)):
     n=360 # ticks per revolution
     vl=(encoder_counts[0][i]+encoder_counts[2][i])/(2*n*t)*(math.pi*d)
     vr=(encoder_counts[1][i]+encoder_counts[3][i])/(2*n*t)*(math.pi*d)
-    reads.append(["e",float(encoder_stamps[i]),float((vl+vr)/2)])
+    reads.append(["e",float(encoder_stamps[i]),float((vl+vr)/2),t])
     
 # imu angular velocity
 for i in range(0,len(imu_stamps)):
-    reads.append(["i",float(imu_stamps[i]), float(imu_angular_velocity[2][i])])
+    reads.append(["i",float(imu_stamps[i]), float(imu_angular_velocity[2][i]),0])
 
 # lidar data
 for i in range(0,len(lidar_stamps)):
-    reads.append(["l", float(lidar_stamps[i]),i]) # acsess through the main lidar read since lidar data big
+    reads.append(["l", float(lidar_stamps[i]),i,0]) # acsess through the main lidar read since lidar data big
 
 reads=np.asarray(reads)
+
 reads = reads[reads[:, 1].argsort()]
-np.savez("reads.npz",reads)
+np.savez("reads.npz",reads_data=reads)
+
+
 
 file=open("output.txt","w")
 for i in reads:

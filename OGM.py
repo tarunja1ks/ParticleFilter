@@ -98,7 +98,7 @@ class OGM:
         for i in range(numberofhits): # converting scans in frame relative to robot center
             scans[i].setPose(np.matmul(scans[i].getPose(),robot_Position_lidar.getPose()))
             
-        self.MAP['map'] = np.zeros((self.MAP['sizex'],self.MAP['sizey']),dtype=np.float32)
+        # self.MAP['map'] = np.zeros((self.MAP['sizex'],self.MAP['sizey']),dtype=np.float32)
         for i in scans:
             x,y=self.meter_to_cell(i.getPose())
             rx,ry=self.meter_to_cell(current_pose.getPose()) # robot x and robot y
@@ -121,7 +121,7 @@ if __name__ == '__main__':
     #   util.show_lidar()
     #   util. test_mapCorrelation()
     ogm=OGM()
-    robot_pose=Pose(0,0,0)
+    robot_pose=Pose(5,5,0)
     ogm.showPlots()
     for i in range(0,340,2):       # 340 is stagnant limit for ogm testing
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,i],robot_pose)
