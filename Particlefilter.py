@@ -12,7 +12,7 @@ import math
 matplotlib.use('TkAgg')
 
 class ParticleFilter:
-    def __init__(self):
+    def __init__(self, initial_pose, numberofparticles=3):
         dataset = 20
         with np.load("./Data/Imu%d.npz"%dataset) as data:
             self.imu_angular_velocity = data["angular_velocity"] # angular velocity in rad/sec
@@ -22,8 +22,18 @@ class ParticleFilter:
             self.encoder_counts = data["counts"] # 4 x n encoder counts
             self.encoder_stamps = data["time_stamps"] # encoder time stamps
         
+        self.particles=np.asarray([np.asarray([Pose(initial_pose.getPoseVector()[0],initial_pose.getPoseVector()[1],initial_pose.getPoseVector()[2]),1/numberofparticles]) for i in range(numberofparticles)])
         
-    def motion_model():
+        self.sigma_v=0.001 # the stdev for lin vel
+        self.sigma_w=0.001 # the stdev for ang vel
+        self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
+        
+        print(self.particles)
+        
+    def getNoise(self):
+        return np.random.multivariate_normal([0,0],self.covariance)
+    def prediction_step(self,u): # in the prediction step we create the noise and update the poses
+        print(u+self.getNoise())
         thing=True
 
 class Robot:
@@ -54,8 +64,9 @@ class Robot:
     
 robot=Robot()
 # print(thing.motion_model([1,0.5],1))
-t=ParticleFilter()
+t=ParticleFilter(robot.getPoseObject())
 
+print(t.prediction_step(np.asarray([0,0])))
 reads=np.load("reads.npz")['reads_data']
 lin_vel=0
 ang_vel=0
@@ -69,30 +80,30 @@ ogm.showPlots()
 robot_trajectory=Trajectory(robot.getPoseObject().getPoseVector())  # purely localization 
 
 # iterating through all of the reads to update models/displays
-for event in reads:
-    dt= float(event[1])-float(last_t)
-    if dt>0:
-        new_Pose=robot.motion_model([float(lin_vel), float(ang_vel)], dt)
-        robot.setPose(Pose(new_Pose[0],new_Pose[1],new_Pose[2]))
+# for event in reads:
+#     dt= float(event[1])-float(last_t)
+#     if dt>0:
+#         new_Pose=robot.motion_model([float(lin_vel), float(ang_vel)], dt)
+#         robot.setPose(Pose(new_Pose[0],new_Pose[1],new_Pose[2]))
         
-        # update traj
-        current_pose_vector = robot.getPoseObject().getPoseVector()
-        robot_trajectory.trajectory_x.append(current_pose_vector[0])
-        robot_trajectory.trajectory_y.append(current_pose_vector[1])
+#         # update traj
+#         current_pose_vector = robot.getPoseObject().getPoseVector()
+#         robot_trajectory.trajectory_x.append(current_pose_vector[0])
+#         robot_trajectory.trajectory_y.append(current_pose_vector[1])
         
-    if event[0]=="e": # encoder
-        lin_vel= event[2]
-    elif event[0]=="i": #imu
-        ang_vel= event[2]
-    elif(event[0]=="l"): # lidar
-        print(event[2],robot.getPoseObject().getPoseVector())
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],robot.getPoseObject())
-        ogm.updatePlot()
-    else:
-        continue
-    last_t= event[1]
+#     if event[0]=="e": # encoder
+#         lin_vel= event[2]
+#     elif event[0]=="i": #imu
+#         ang_vel= event[2]
+#     elif(event[0]=="l"): # lidar
+#         print(event[2],robot.getPoseObject().getPoseVector())
+#         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],robot.getPoseObject())
+        
+#     else:
+#         continue
+#     last_t= event[1]
 
-
+ogm.updatePlot()
 robot_trajectory.showPlot() #showing the robots trajectory from encoders
 
 

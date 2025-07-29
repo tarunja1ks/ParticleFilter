@@ -86,9 +86,6 @@ class OGM:
             self.MAP['sizex']= new_sizex
             self.MAP['sizey']= new_sizey
             self.MAP['map']= new_map
-            
-            print(f"Map expanded to: X[{new_xmin:.1f}, {new_xmax:.1f}], Y[{new_ymin:.1f}, {new_ymax:.1f}]")
-            print(f"New map size: {new_sizex} x {new_sizey}")
             expanded= True
             
         return expanded
@@ -175,7 +172,7 @@ class OGM:
             # Mark occupied cell at the hit
             self.ogm_plot(x, y, True)
             
-        print(f"Map bounds: X[{self.MAP['xmin']:.1f}, {self.MAP['xmax']:.1f}], Y[{self.MAP['ymin']:.1f}, {self.MAP['ymax']:.1f}]")
+       
 
     def showPlots(self):
         plt.show()
@@ -214,26 +211,6 @@ class OGM:
         
         plt.pause(0.05)
         
-        
-if __name__== '__main__':
-    ogm= OGM()
-    robot_pose= Pose(5, 5, 0)
-    ogm.showPlots()
-    
-    for i in range(0, 340, 2):       # 340 is stagnant limit for ogm testing
-        print(f"Processing scan {i}")
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,i], robot_pose)
-        ogm.updatePlot(robot_pose)  # Pass robot pose for visualization
-    
-    # Save output
-    import sys
-    sys.stdout= open("output.txt", "w")
-    m= ogm.MAP['map']
-    for i in m:
-        output= ""
-        for j in i:
-            output += str(j) + " "
-        print(output)
         
 class Trajectory:
     def __init__(self, initial_pose_vector):
