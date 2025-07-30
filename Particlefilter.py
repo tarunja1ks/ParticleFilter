@@ -26,7 +26,7 @@ class ParticleFilter:
         self.particles=np.asarray([np.asarray([Pose(initial_pose.getPoseVector()[0],initial_pose.getPoseVector()[1],initial_pose.getPoseVector()[2]),1/numberofparticles]) for i in range(numberofparticles)])
 
         self.sigma_v=0.2 # the stdev for lin vel
-        self.sigma_w=0.05 # the stdev for ang vel
+        self.sigma_w=0.1 # the stdev for ang vel
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
         
@@ -48,7 +48,9 @@ class ParticleFilter:
             xt1=xt_as_vector+Tt*np.asarray([vel_t*util.sinc(angle)*math.cos(xt_as_vector[2]+angle), vel_t*util.sinc(angle)*math.sin(xt_as_vector[2]+angle), ang_t ]) #X_T+1
             self.particles[i][0]=Pose(xt1[0],xt1[1],xt1[2])
             
+    def update_step(self):
         
+        return True
             
         
 
@@ -65,9 +67,9 @@ reads=np.load("reads.npz")['reads_data']
 lin_vel=0
 ang_vel=0
 
-# ogm=OGM()
+ogm=OGM()
 last_t=reads[0][1]
-# ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.getPoseObject())
+ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.getPoseObject())
 # ogm.showPlots()
 
 
@@ -83,7 +85,7 @@ for event in reads:
         # print([j[0].getPoseVector() for j in pf.particles])
         for i in range(pf.numberofparticles):
             # update traj
-            current_pose_vector = pf.particles[i][0].getPoseVector()
+            current_pose_vector=pf.particles[i][0].getPoseVector()
             Trajectories[i].trajectory_x.append(current_pose_vector[0])
             Trajectories[i].trajectory_y.append(current_pose_vector[1])
             
@@ -92,17 +94,23 @@ for event in reads:
     elif event[0]=="i": #imu
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
-        # ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],pf.getPoseObject())
+        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],pf.getPoseObject()) # intersecting/marking cells
+        # ogm.updatePlot()
         ind+=1
         print(ind)
     else:
         continue
     last_t= event[1]
     
+    
 
+file=open("ogmMap.txt","w")
+for i in ogm.MAP['map']:
+    for j in i:
+        file.write(str(j)+" ")
+    file.write("\n")
 
-
-# ogm.updatePlot()
+ogm.updatePlot()
 [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
 plt.pause(10000)
 

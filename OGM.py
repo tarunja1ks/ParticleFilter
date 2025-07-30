@@ -156,7 +156,7 @@ class OGM:
         # Transform scans from sensor frame to world frame
         for i in range(numberofhits):
             scans[i].setPose(np.matmul(sensor_pose.getPose(), scans[i].getPose()))
-            
+        
         # Process each scan hit
         for i in scans:
             x, y= self.meter_to_cell(i.getPose())
@@ -168,14 +168,17 @@ class OGM:
             # Mark free cells along the ray
             for j in range(intersection_point_count - 1):
                 self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
-            
+                
             # Mark occupied cell at the hit
             self.ogm_plot(x, y, True)
             
+
        
 
     def showPlots(self):
         plt.show()
+    
+    # def mapCorrelation(): # making it again to understand it more 
         
     def updatePlot(self, robot_pose=None):
         # Check if map was expanded and recreate imshow if needed
