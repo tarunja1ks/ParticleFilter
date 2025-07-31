@@ -127,7 +127,7 @@ class OGM:
     def probabilityToLogOdds(self,probability):
         return math.log(probability/(1-probability))
     
-    def bressenham_mark_Cells(self, scan, current_pose):
+    def bressenham_mark_Cells(self, scan, particles):
         angles= np.arange(self.lidar_angle_min, self.lidar_angle_max + self.lidar_angle_increment, 
                           self.lidar_angle_increment) * np.pi / 180.0
         ranges= scan
@@ -148,19 +148,70 @@ class OGM:
         scans= np.asarray(scans)
         
         # Create sensor pose with offset from robot center
-        current_pose_vector= current_pose.getPoseVector()
+        
+        weights=[]
+        for i in particles:
+            current_pose_vector= i[0].getPoseVector()
+            sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
+                            current_pose_vector[1] + self.sensor_y_r, 
+                            current_pose_vector[2] + self.sensor_yaw_r)
+
+            scans= []
+            for i in range(numberofhits): 
+                scans.append(Pose(xs0[i], ys0[i], angles[i]))
+            scans= np.asarray(scans)
+            # Transform scans from sensor frame to world frame
+            for j in range(numberofhits):
+                scans[j].setPose(np.matmul(sensor_pose.getPose(), scans[j].getPose()))
+        
+            # Process each scan hit
+            matching_probability=0
+            for z in scans:
+                x, y= self.meter_to_cell(z.getPose())
+                rx, ry= self.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
+                
+                scan_intersect= util.bresenham2D(rx, ry, x, y)
+                intersection_point_count= len(scan_intersect[0])
+                
+                # Mark free cells along the ray
+                for j in range(intersection_point_count - 1):
+                    probabilityNotOccupied=1-self.logOddstoProbability(self.MAP['map'][int(scan_intersect[0][j])][int(scan_intersect[1][j])])
+                    matching_probability+=self.probabilityToLogOdds(probabilityNotOccupied)
+                    # self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
+                    
+                # Mark occupied cell at the hit
+                
+                matching_probability+=self.MAP['map'][x][y]
+                # print(self.MAP['map'][x][y])
+                # self.ogm_plot(x, y, True)
+            weights.append(matching_probability)
+        # print(weights)
+        maximum_weight=max(weights)
+        weights=[(i-maximum_weight) for i in weights]
+        weights=np.exp(weights)
+        
+        best_weight_index=list(weights).index(max(weights))
+        
+        
+        current_pose_vector= particles[best_weight_index][0].getPoseVector()
+        # current_pose_vector= particles[best_weight_index][0].getPoseVector()
         sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
-                          current_pose_vector[1] + self.sensor_y_r, 
-                          current_pose_vector[2] + self.sensor_yaw_r)
-        
+                        current_pose_vector[1] + self.sensor_y_r, 
+                        current_pose_vector[2] + self.sensor_yaw_r)
+
+        # print(current_pose_vector, best_weight_index)
         # Transform scans from sensor frame to world frame
-        for i in range(numberofhits):
-            scans[i].setPose(np.matmul(sensor_pose.getPose(), scans[i].getPose()))
-        
+        scans= []
+        for i in range(numberofhits): 
+            scans.append(Pose(xs0[i], ys0[i], angles[i]))
+        scans= np.asarray(scans)
+        for j in range(numberofhits):
+            scans[j].setPose(np.matmul(sensor_pose.getPose(), scans[j].getPose()))
+    
         # Process each scan hit
         matching_probability=0
-        for i in scans:
-            x, y= self.meter_to_cell(i.getPose())
+        for z in scans:
+            x, y= self.meter_to_cell(z.getPose())
             rx, ry= self.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
             
             scan_intersect= util.bresenham2D(rx, ry, x, y)
@@ -170,16 +221,20 @@ class OGM:
             for j in range(intersection_point_count - 1):
                 probabilityNotOccupied=1-self.logOddstoProbability(self.MAP['map'][int(scan_intersect[0][j])][int(scan_intersect[1][j])])
                 matching_probability+=self.probabilityToLogOdds(probabilityNotOccupied)
-                # self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
+                self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
                 
             # Mark occupied cell at the hit
             
             matching_probability+=self.MAP['map'][x][y]
-            print(self.MAP['map'][x][y])
-            # self.ogm_plot(x, y, True)
-            
-        print(matching_probability,"----------")
+            self.ogm_plot(x, y, True)
+        
+        return particles[best_weight_index]
+        
+        
+        
+        
 
+        
        
 
     def showPlots(self):

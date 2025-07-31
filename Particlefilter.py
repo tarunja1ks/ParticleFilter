@@ -47,7 +47,8 @@ class ParticleFilter:
             angle=ang_t*Tt/2
             xt1=xt_as_vector+Tt*np.asarray([vel_t*util.sinc(angle)*math.cos(xt_as_vector[2]+angle), vel_t*util.sinc(angle)*math.sin(xt_as_vector[2]+angle), ang_t ]) #X_T+1
             self.particles[i][0]=Pose(xt1[0],xt1[1],xt1[2])
-        pf.setPose(self.particles[0][0])
+        # pf.setPose(self.particles[0][0])
+        print([i[0].getPoseVector() for i in self.particles])
             
     def update_step(self):
         
@@ -70,7 +71,8 @@ ang_vel=0
 
 ogm=OGM()
 last_t=reads[0][1]
-ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.getPoseObject())
+particles=np.array([[i][0] for i in pf.particles])
+ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],particles)
 # ogm.showPlots()
 
 
@@ -83,24 +85,24 @@ for event in reads:
     dt= float(event[1])-float(last_t)
     if dt>0:
         pf.prediction_step([float(lin_vel), float(ang_vel)], dt)
-        # print([j[0].getPoseVector() for j in pf.particles])
         for i in range(pf.numberofparticles):
             # update traj
             current_pose_vector=pf.particles[i][0].getPoseVector()
             Trajectories[i].trajectory_x.append(current_pose_vector[0])
             Trajectories[i].trajectory_y.append(current_pose_vector[1])
             Trajectories[i].trajectory_h.append(current_pose_vector[2])
-            
+            print("Updated",i,"new version: ", current_pose_vector,"-----------")
     if event[0]=="e": # encoder
         lin_vel= event[2]
     elif event[0]=="i": #imu
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],pf.getPoseObject()) # intersecting/marking cells
+        particles=np.array([[i][0] for i in pf.particles])
+        # print(particles,"---------------")
+        pf.setPose(ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],particles)) # intersecting/marking cells
         ogm.updatePlot()
+        
         ind+=1
-        print(ind)
-        break
     else:
         continue
     last_t= event[1]
@@ -115,7 +117,7 @@ for i in ogm.MAP['map']:
 
 ogm.updatePlot()
 [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
-plt.pause(10000)
+plt.pause(10000000)
 
 
     
