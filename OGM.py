@@ -7,7 +7,7 @@ import time
 from fractions import Fraction
 from Pose import Pose
 import math
-
+from numba import njit
 matplotlib.use('TkAgg')
 
 class OGM: 
