@@ -113,20 +113,20 @@ class OGM:
             self.MAP['map'][x][y]= value
     
     def ogm_plot(self, x, y, occupied=False):
-        # Added bounds checking
         if not (0 <= x < self.MAP['sizex'] and 0 <= y < self.MAP['sizey']):
             return
-            
         confidence= 0.85 # confidence level of the sensor
         if occupied:
             odds= confidence / (1 - confidence)
         else:
             odds= (1 - confidence) / confidence
         self.MAP['map'][x][y] += math.log(odds)
-        
-        # Clamp values to prevent overflow
         self.MAP['map'][x][y]= max(-10, min(10, self.MAP['map'][x][y]))
-        
+    def logOddstoProbability(self,logOdds):
+        return 1 / (1 + math.exp(-logOdds))
+    def probabilityToLogOdds(self,probability):
+        return math.log(probability/(1-probability))
+    
     def bressenham_mark_Cells(self, scan, current_pose):
         angles= np.arange(self.lidar_angle_min, self.lidar_angle_max + self.lidar_angle_increment, 
                           self.lidar_angle_increment) * np.pi / 180.0
@@ -158,6 +158,7 @@ class OGM:
             scans[i].setPose(np.matmul(sensor_pose.getPose(), scans[i].getPose()))
         
         # Process each scan hit
+        matching_probability=0
         for i in scans:
             x, y= self.meter_to_cell(i.getPose())
             rx, ry= self.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
@@ -167,11 +168,15 @@ class OGM:
             
             # Mark free cells along the ray
             for j in range(intersection_point_count - 1):
+                probabilityNotOccupied=1-self.logOddstoProbability(self.MAP['map'][int(scan_intersect[0][j])][int(scan_intersect[1][j])])
+                matching_probability+=self.probabilityToLogOdds(probabilityNotOccupied)
                 self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
                 
             # Mark occupied cell at the hit
-            self.ogm_plot(x, y, True)
             
+            matching_probability+=self.MAP['map'][x][y]
+            self.ogm_plot(x, y, True)
+        print(matching_probability)
 
        
 
