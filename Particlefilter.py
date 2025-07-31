@@ -89,6 +89,7 @@ for event in reads:
             current_pose_vector=pf.particles[i][0].getPoseVector()
             Trajectories[i].trajectory_x.append(current_pose_vector[0])
             Trajectories[i].trajectory_y.append(current_pose_vector[1])
+            Trajectories[i].trajectory_h.append(current_pose_vector[2])
             
     if event[0]=="e": # encoder
         lin_vel= event[2]
@@ -99,6 +100,7 @@ for event in reads:
         ogm.updatePlot()
         ind+=1
         print(ind)
+        break
     else:
         continue
     last_t= event[1]

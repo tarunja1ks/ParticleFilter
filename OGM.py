@@ -170,13 +170,15 @@ class OGM:
             for j in range(intersection_point_count - 1):
                 probabilityNotOccupied=1-self.logOddstoProbability(self.MAP['map'][int(scan_intersect[0][j])][int(scan_intersect[1][j])])
                 matching_probability+=self.probabilityToLogOdds(probabilityNotOccupied)
-                self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
+                # self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
                 
             # Mark occupied cell at the hit
             
             matching_probability+=self.MAP['map'][x][y]
-            self.ogm_plot(x, y, True)
-        print(matching_probability)
+            print(self.MAP['map'][x][y])
+            # self.ogm_plot(x, y, True)
+            
+        print(matching_probability,"----------")
 
        
 
@@ -232,8 +234,10 @@ class Trajectory:
         # initializing robot position
         self.trajectory_x= []
         self.trajectory_y= []
+        self.trajectory_h=[]
         self.trajectory_x.append(initial_pose_vector[0])
         self.trajectory_y.append(initial_pose_vector[1])
+        self.trajectory_h.append(initial_pose_vector[2])
         
         self.trajectory_line_traj,= self.ax_traj.plot(self.trajectory_x, self.trajectory_y, 'b-', linewidth=2, label='Trajectory')
         
