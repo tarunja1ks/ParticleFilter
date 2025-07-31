@@ -26,8 +26,8 @@ class ParticleFilter:
         
         self.particles=np.asarray([np.asarray([Pose(initial_pose.getPoseVector()[0],initial_pose.getPoseVector()[1],initial_pose.getPoseVector()[2]),1/numberofparticles]) for i in range(numberofparticles)])
 
-        self.sigma_v=0.13 # the stdev for lin vel
-        self.sigma_w=0.05 # the stdev for ang vel
+        self.sigma_v=0.02 # the stdev for lin vel
+        self.sigma_w=0.01 # the stdev for ang vel
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
         
@@ -49,8 +49,19 @@ class ParticleFilter:
             xt1=xt_as_vector+Tt*np.asarray([vel_t*util.sinc(angle)*math.cos(xt_as_vector[2]+angle), vel_t*util.sinc(angle)*math.sin(xt_as_vector[2]+angle), ang_t ]) #X_T+1
             self.particles[i][0]=Pose(xt1[0],xt1[1],xt1[2])
         # pf.setPose(self.particles[0][0])
-            
-    def update_step(self):
+    
+    def updating_step(self, weights): # producing the pose the p(z|x and u) is handled within the ogm bressham2dmarking function to optimize computing
+        weights=[i/sum(weights) for i in weights] # normalizing
+        weighted_x=sum([self.particles[i][0].getPoseVector()[0]*weights[i] for i in range(self.numberofparticles)])
+        weighted_y=sum([self.particles[i][0].getPoseVector()[1]*weights[i] for i in range(self.numberofparticles)])
+        
+        weighted_sin=sum([math.sin(self.particles[i][0].getPoseVector()[2])*weights[i] for i in range(self.numberofparticles)])
+        weighted_cos=sum([math.cos(self.particles[i][0].getPoseVector()[2])*weights[i] for i in range(self.numberofparticles)])
+        
+        weighted_angle=math.atan2(weighted_sin,weighted_cos)
+        
+        return Pose(weighted_x,weighted_y,weighted_angle)
+    def resampling_step(self,weights):
         
         return True
             
@@ -82,6 +93,7 @@ ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],particles)
 Trajectories=[Trajectory(pf.getPoseObject().getPoseVector())]*numberOfParticles
 # iterating through all of the reads to update models/displays
 ind=0
+weights=[]
 for event in reads:
     dt= float(event[1])-float(last_t)
     if dt>0:
@@ -92,6 +104,8 @@ for event in reads:
             Trajectories[i].trajectory_x.append(current_pose_vector[0])
             Trajectories[i].trajectory_y.append(current_pose_vector[1])
             Trajectories[i].trajectory_h.append(current_pose_vector[2])
+            
+            
     if event[0]=="e": # encoder
         lin_vel= event[2]
     elif event[0]=="i": #imu
@@ -99,7 +113,8 @@ for event in reads:
     elif(event[0]=="l"): # lidar
         particles=np.array([[i][0] for i in pf.particles])
         # print(particles,"---------------")
-        pf.setPose(ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],particles)) # intersecting/marking cells
+        weights=ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],particles)
+        pf.setPose(pf.updating_step(weights)) # intersecting/marking cells
         ogm.updatePlot()   
         ind+=1
         print(ind)

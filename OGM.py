@@ -228,7 +228,7 @@ class OGM:
             matching_probability+=self.MAP['map'][x][y]
             self.ogm_plot(x, y, True)
         
-        return particles[best_weight_index]
+        return weights
         
         
         
