@@ -47,6 +47,7 @@ class ParticleFilter:
             angle=ang_t*Tt/2
             xt1=xt_as_vector+Tt*np.asarray([vel_t*util.sinc(angle)*math.cos(xt_as_vector[2]+angle), vel_t*util.sinc(angle)*math.sin(xt_as_vector[2]+angle), ang_t ]) #X_T+1
             self.particles[i][0]=Pose(xt1[0],xt1[1],xt1[2])
+        pf.setPose(self.particles[0][0])
             
     def update_step(self):
         
@@ -95,7 +96,7 @@ for event in reads:
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],pf.getPoseObject()) # intersecting/marking cells
-        # ogm.updatePlot()
+        ogm.updatePlot()
         ind+=1
         print(ind)
     else:
