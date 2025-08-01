@@ -7,7 +7,7 @@ import time
 from fractions import Fraction
 from Pose import Pose
 import math
-
+from numba import njit
 matplotlib.use('TkAgg')
 
 class OGM: 
@@ -86,9 +86,6 @@ class OGM:
             self.MAP['sizex']= new_sizex
             self.MAP['sizey']= new_sizey
             self.MAP['map']= new_map
-            
-            print(f"Map expanded to: X[{new_xmin:.1f}, {new_xmax:.1f}], Y[{new_ymin:.1f}, {new_ymax:.1f}]")
-            print(f"New map size: {new_sizex} x {new_sizey}")
             expanded= True
             
         return expanded
@@ -116,21 +113,21 @@ class OGM:
             self.MAP['map'][x][y]= value
     
     def ogm_plot(self, x, y, occupied=False):
-        # Added bounds checking
         if not (0 <= x < self.MAP['sizex'] and 0 <= y < self.MAP['sizey']):
             return
-            
-        confidence= 0.85 # confidence level of the sensor
+        confidence= 0.8 # confidence level of the sensor
         if occupied:
             odds= confidence / (1 - confidence)
         else:
             odds= (1 - confidence) / confidence
         self.MAP['map'][x][y] += math.log(odds)
-        
-        # Clamp values to prevent overflow
         self.MAP['map'][x][y]= max(-10, min(10, self.MAP['map'][x][y]))
-        
-    def bressenham_mark_Cells(self, scan, current_pose):
+    def logOddstoProbability(self,logOdds):
+        return 1 / (1 + math.exp(-logOdds))
+    def probabilityToLogOdds(self,probability):
+        return math.log(probability/(1-probability))
+    
+    def bressenham_mark_Cells(self, scan, particles):
         angles= np.arange(self.lidar_angle_min, self.lidar_angle_max + self.lidar_angle_increment, 
                           self.lidar_angle_increment) * np.pi / 180.0
         ranges= scan
@@ -151,18 +148,73 @@ class OGM:
         scans= np.asarray(scans)
         
         # Create sensor pose with offset from robot center
-        current_pose_vector= current_pose.getPoseVector()
-        sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
-                          current_pose_vector[1] + self.sensor_y_r, 
-                          current_pose_vector[2] + self.sensor_yaw_r)
         
+        old_weights=[i[1] for i in particles]
+        new_weights=[]
+        for i in particles:
+            current_pose_vector= i[0].getPoseVector()
+            sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
+                            current_pose_vector[1] + self.sensor_y_r, 
+                            current_pose_vector[2] + self.sensor_yaw_r)
+
+            scans= []
+            for i in range(numberofhits): 
+                scans.append(Pose(xs0[i], ys0[i], angles[i]))
+            scans= np.asarray(scans)
+            # Transform scans from sensor frame to world frame
+            for j in range(numberofhits):
+                scans[j].setPose(np.matmul(sensor_pose.getPose(), scans[j].getPose()))
+        
+            # Process each scan hit
+            matching_probability=0
+            for z in scans:
+                x, y= self.meter_to_cell(z.getPose())
+                rx, ry= self.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
+                
+                scan_intersect= util.bresenham2D(rx, ry, x, y)
+                intersection_point_count= len(scan_intersect[0])
+                
+                # Mark free cells along the ray
+                for j in range(intersection_point_count - 1):
+                    probabilityNotOccupied=1-self.logOddstoProbability(self.MAP['map'][int(scan_intersect[0][j])][int(scan_intersect[1][j])])
+                    matching_probability+=self.probabilityToLogOdds(probabilityNotOccupied)
+                    # self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
+                    
+                # Mark occupied cell at the hit
+                
+                matching_probability+=self.MAP['map'][x][y]
+                # print(self.MAP['map'][x][y])
+                # self.ogm_plot(x, y, True)
+            new_weights.append(matching_probability)
+        # print(weights)
+        maximum_weight=max(new_weights)
+        new_weights=[float(i-maximum_weight) for i in new_weights]
+        new_weights=np.exp(new_weights)
+        print(new_weights,"--**--**")
+        weights=[(new_weights[i]*old_weights[i]) for i in range(len(particles))]
+        print(weights)
+        
+        best_weight_index=list(weights).index(max(weights))
+        
+        
+        current_pose_vector= particles[best_weight_index][0].getPoseVector()
+        sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
+                        current_pose_vector[1] + self.sensor_y_r, 
+                        current_pose_vector[2] + self.sensor_yaw_r)
+
+        # print(current_pose_vector, best_weight_index)
         # Transform scans from sensor frame to world frame
-        for i in range(numberofhits):
-            scans[i].setPose(np.matmul(sensor_pose.getPose(), scans[i].getPose()))
-            
+        scans= []
+        for i in range(numberofhits): 
+            scans.append(Pose(xs0[i], ys0[i], angles[i]))
+        scans= np.asarray(scans)
+        for j in range(numberofhits):
+            scans[j].setPose(np.matmul(sensor_pose.getPose(), scans[j].getPose()))
+    
         # Process each scan hit
-        for i in scans:
-            x, y= self.meter_to_cell(i.getPose())
+        matching_probability=0
+        for z in scans:
+            x, y= self.meter_to_cell(z.getPose())
             rx, ry= self.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
             
             scan_intersect= util.bresenham2D(rx, ry, x, y)
@@ -170,15 +222,28 @@ class OGM:
             
             # Mark free cells along the ray
             for j in range(intersection_point_count - 1):
+                probabilityNotOccupied=1-self.logOddstoProbability(self.MAP['map'][int(scan_intersect[0][j])][int(scan_intersect[1][j])])
+                matching_probability+=self.probabilityToLogOdds(probabilityNotOccupied)
                 self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
-            
+                
             # Mark occupied cell at the hit
-            self.ogm_plot(x, y, True)
             
-        print(f"Map bounds: X[{self.MAP['xmin']:.1f}, {self.MAP['xmax']:.1f}], Y[{self.MAP['ymin']:.1f}, {self.MAP['ymax']:.1f}]")
+            matching_probability+=self.MAP['map'][x][y]
+            self.ogm_plot(x, y, True)
+        
+        return weights
+        
+        
+        
+        
+
+        
+       
 
     def showPlots(self):
         plt.show()
+    
+    # def mapCorrelation(): # making it again to understand it more 
         
     def updatePlot(self, robot_pose=None):
         # Check if map was expanded and recreate imshow if needed
@@ -215,26 +280,6 @@ class OGM:
         plt.pause(0.05)
         
         
-if __name__== '__main__':
-    ogm= OGM()
-    robot_pose= Pose(5, 5, 0)
-    ogm.showPlots()
-    
-    for i in range(0, 340, 2):       # 340 is stagnant limit for ogm testing
-        print(f"Processing scan {i}")
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,i], robot_pose)
-        ogm.updatePlot(robot_pose)  # Pass robot pose for visualization
-    
-    # Save output
-    import sys
-    sys.stdout= open("output.txt", "w")
-    m= ogm.MAP['map']
-    for i in m:
-        output= ""
-        for j in i:
-            output += str(j) + " "
-        print(output)
-        
 class Trajectory:
     def __init__(self, initial_pose_vector):
         self.fig_traj, self.ax_traj= plt.subplots(1, 1, figsize=(8, 8))
@@ -247,8 +292,10 @@ class Trajectory:
         # initializing robot position
         self.trajectory_x= []
         self.trajectory_y= []
+        self.trajectory_h=[]
         self.trajectory_x.append(initial_pose_vector[0])
         self.trajectory_y.append(initial_pose_vector[1])
+        self.trajectory_h.append(initial_pose_vector[2])
         
         self.trajectory_line_traj,= self.ax_traj.plot(self.trajectory_x, self.trajectory_y, 'b-', linewidth=2, label='Trajectory')
         
@@ -257,4 +304,3 @@ class Trajectory:
         self.ax_traj.relim() 
         self.ax_traj.autoscale_view() 
         self.fig_traj.canvas.draw_idle()
-        plt.pause(10000)
