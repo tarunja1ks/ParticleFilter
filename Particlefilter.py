@@ -74,7 +74,7 @@ class ParticleFilter:
     
 
 initial_pose=Pose(0,0,0)
-numberOfParticles=10
+numberOfParticles=3
 pf=ParticleFilter(initial_pose,numberOfParticles)
 
 reads=np.load("reads.npz")['reads_data']
@@ -93,7 +93,7 @@ ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],particles)
 Trajectories=[Trajectory(pf.getPoseObject().getPoseVector())]*numberOfParticles
 # iterating through all of the reads to update models/displays
 ind=0
-weights=[]
+
 for event in reads:
     dt= float(event[1])-float(last_t)
     if dt>0:
@@ -114,6 +114,8 @@ for event in reads:
         particles=np.array([[i][0] for i in pf.particles])
         # print(particles,"---------------")
         weights=ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],particles)
+        for i in range(len(weights)):
+            pf.particles[i][1]=weights[i]
         pf.setPose(pf.updating_step(weights)) # intersecting/marking cells
         ogm.updatePlot()   
         ind+=1

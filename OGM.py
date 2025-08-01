@@ -115,7 +115,7 @@ class OGM:
     def ogm_plot(self, x, y, occupied=False):
         if not (0 <= x < self.MAP['sizex'] and 0 <= y < self.MAP['sizey']):
             return
-        confidence= 0.85 # confidence level of the sensor
+        confidence= 0.8 # confidence level of the sensor
         if occupied:
             odds= confidence / (1 - confidence)
         else:
@@ -149,7 +149,8 @@ class OGM:
         
         # Create sensor pose with offset from robot center
         
-        weights=[]
+        old_weights=[i[1] for i in particles]
+        new_weights=[]
         for i in particles:
             current_pose_vector= i[0].getPoseVector()
             sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
@@ -184,17 +185,19 @@ class OGM:
                 matching_probability+=self.MAP['map'][x][y]
                 # print(self.MAP['map'][x][y])
                 # self.ogm_plot(x, y, True)
-            weights.append(matching_probability)
+            new_weights.append(matching_probability)
         # print(weights)
-        maximum_weight=max(weights)
-        weights=[(i-maximum_weight) for i in weights]
-        weights=np.exp(weights)
+        maximum_weight=max(new_weights)
+        new_weights=[float(i-maximum_weight) for i in new_weights]
+        new_weights=np.exp(new_weights)
+        print(new_weights,"--**--**")
+        weights=[(new_weights[i]*old_weights[i]) for i in range(len(particles))]
+        print(weights)
         
         best_weight_index=list(weights).index(max(weights))
         
         
         current_pose_vector= particles[best_weight_index][0].getPoseVector()
-        # current_pose_vector= particles[best_weight_index][0].getPoseVector()
         sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
                         current_pose_vector[1] + self.sensor_y_r, 
                         current_pose_vector[2] + self.sensor_yaw_r)
