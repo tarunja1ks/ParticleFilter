@@ -107,16 +107,16 @@ class ParticleFilter:
                 matching_probability+=OGM.MAP['map'][x][y] # occupied hitpoint
                 # OGM.ogm_plot(x,y, True)
             
-            new_weights.append(matching_probability)
+            new_weights.append(matching_probability/numberofhits)
         
         # normalizing the new weights to prevent numerical overflow from the ogm logodds plot
-        new_weights=[(i-max(new_weights)) for i in new_weights]
+        # new_weights=[(i-max(new_weights)) for i in new_weights]
         new_weights=np.exp(new_weights)
         
         print(new_weights)
         total_weight=0
         for i in range(self.numberofparticles):
-            self.particles[i][1]*=new_weights[i] # multiplying the new probabilties in
+            self.particles[i][1]*=new_weights[i] # adding the new probabilties in
             total_weight+=self.particles[i][1]
         
         
