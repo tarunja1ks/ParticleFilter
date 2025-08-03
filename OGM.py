@@ -112,7 +112,7 @@ class OGM:
         if 0 <= x < self.MAP['sizex'] and 0 <= y < self.MAP['sizey']:
             self.MAP['map'][x][y]= value
     
-    def ogm_plot(self, x, y, occupied=False):
+    def ogm_plot(self, x, y, occupied=False, scale=1, bound=10):
         if not (0 <= x < self.MAP['sizex'] and 0 <= y < self.MAP['sizey']):
             return
         confidence= 0.8 # confidence level of the sensor
@@ -120,14 +120,15 @@ class OGM:
             odds= confidence / (1 - confidence)
         else:
             odds= (1 - confidence) / confidence
-        self.MAP['map'][x][y] += math.log(odds)
-        self.MAP['map'][x][y]= max(-10, min(10, self.MAP['map'][x][y]))
+        self.MAP['map'][x][y] += (math.log(odds))*scale
+        self.MAP['map'][x][y]= max(-bound, min(bound, self.MAP['map'][x][y]))
+        
     def logOddstoProbability(self,logOdds):
         return 1 / (1 + math.exp(-logOdds))
     def probabilityToLogOdds(self,probability):
         return math.log(probability/(1-probability))
     
-    def bressenham_mark_Cells(self, scan, particles):
+    def bressenham_mark_Cells(self, scan, current_pose):
         angles= np.arange(self.lidar_angle_min, self.lidar_angle_max + self.lidar_angle_increment, 
                           self.lidar_angle_increment) * np.pi / 180.0
         ranges= scan
@@ -148,73 +149,19 @@ class OGM:
         scans= np.asarray(scans)
         
         # Create sensor pose with offset from robot center
-        
-        old_weights=[i[1] for i in particles]
-        new_weights=[]
-        for i in particles:
-            current_pose_vector= i[0].getPoseVector()
-            sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
-                            current_pose_vector[1] + self.sensor_y_r, 
-                            current_pose_vector[2] + self.sensor_yaw_r)
-
-            scans= []
-            for i in range(numberofhits): 
-                scans.append(Pose(xs0[i], ys0[i], angles[i]))
-            scans= np.asarray(scans)
-            # Transform scans from sensor frame to world frame
-            for j in range(numberofhits):
-                scans[j].setPose(np.matmul(sensor_pose.getPose(), scans[j].getPose()))
-        
-            # Process each scan hit
-            matching_probability=0
-            for z in scans:
-                x, y= self.meter_to_cell(z.getPose())
-                rx, ry= self.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
-                
-                scan_intersect= util.bresenham2D(rx, ry, x, y)
-                intersection_point_count= len(scan_intersect[0])
-                
-                # Mark free cells along the ray
-                for j in range(intersection_point_count - 1):
-                    probabilityNotOccupied=1-self.logOddstoProbability(self.MAP['map'][int(scan_intersect[0][j])][int(scan_intersect[1][j])])
-                    matching_probability+=self.probabilityToLogOdds(probabilityNotOccupied)
-                    # self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
-                    
-                # Mark occupied cell at the hit
-                
-                matching_probability+=self.MAP['map'][x][y]
-                # print(self.MAP['map'][x][y])
-                # self.ogm_plot(x, y, True)
-            new_weights.append(matching_probability)
-        # print(weights)
-        maximum_weight=max(new_weights)
-        new_weights=[float(i-maximum_weight) for i in new_weights]
-        new_weights=np.exp(new_weights)
-        print(new_weights,"--**--**")
-        weights=[(new_weights[i]*old_weights[i]) for i in range(len(particles))]
-        print(weights)
-        
-        best_weight_index=list(weights).index(max(weights))
-        
-        
-        current_pose_vector= particles[best_weight_index][0].getPoseVector()
+        current_pose_vector= current_pose.getPoseVector()
         sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
-                        current_pose_vector[1] + self.sensor_y_r, 
-                        current_pose_vector[2] + self.sensor_yaw_r)
-
-        # print(current_pose_vector, best_weight_index)
+                          current_pose_vector[1] + self.sensor_y_r, 
+                          current_pose_vector[2] + self.sensor_yaw_r)
+        
         # Transform scans from sensor frame to world frame
-        scans= []
-        for i in range(numberofhits): 
-            scans.append(Pose(xs0[i], ys0[i], angles[i]))
-        scans= np.asarray(scans)
-        for j in range(numberofhits):
-            scans[j].setPose(np.matmul(sensor_pose.getPose(), scans[j].getPose()))
-    
+        for i in range(numberofhits):
+            scans[i].setPose(np.matmul(sensor_pose.getPose(), scans[i].getPose()))
+        
         # Process each scan hit
         matching_probability=0
-        for z in scans:
-            x, y= self.meter_to_cell(z.getPose())
+        for i in scans:
+            x, y= self.meter_to_cell(i.getPose())
             rx, ry= self.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
             
             scan_intersect= util.bresenham2D(rx, ry, x, y)
@@ -222,16 +169,54 @@ class OGM:
             
             # Mark free cells along the ray
             for j in range(intersection_point_count - 1):
-                probabilityNotOccupied=1-self.logOddstoProbability(self.MAP['map'][int(scan_intersect[0][j])][int(scan_intersect[1][j])])
-                matching_probability+=self.probabilityToLogOdds(probabilityNotOccupied)
                 self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
                 
             # Mark occupied cell at the hit
             
             matching_probability+=self.MAP['map'][x][y]
             self.ogm_plot(x, y, True)
+            
+
+       
+
+    def showPlots(self):
+        plt.show()
+    
+    # def mapCorrelation(): # making it again to understand it more 
         
-        return weights
+    def updatePlot(self, robot_pose=None):
+        # Check if map was expanded and recreate imshow if needed
+        current_extent= [self.MAP['ymin'], self.MAP['ymax'], self.MAP['xmin'], self.MAP['xmax']]
+        
+        try:
+            # Try to update existing plot
+            self.ogm_map.set_data(self.MAP['map'])
+            self.ogm_map.set_extent(current_extent)
+        except:
+            # If map size changed, recreate the plot
+            plt.clf()  # Clear the figure
+            self.ogm_map= plt.imshow(self.MAP['map'], cmap="gray", vmin=-5, vmax=5, 
+                                     origin='lower', extent=current_extent)
+            plt.title("Occupancy Grid Map (Dynamic)")
+            plt.xlabel("Y [meters]")
+            plt.ylabel("X [meters]")
+            plt.colorbar(label="Log-odds")
+            plt.grid(True, alpha=0.3)
+            
+            # Recreate robot marker
+            self.robot_marker= plt.plot(0, 0, 'ro', markersize=8, label='Robot')[0]
+            plt.legend()
+        
+        # Update robot position if provided
+        if robot_pose is not None:
+            pose_vec= robot_pose.getPoseVector()
+            self.robot_marker.set_data([pose_vec[1]], [pose_vec[0]])  # Note: x,y swapped for display
+        
+        # Update axis limits to show full map
+        plt.xlim(self.MAP['ymin'], self.MAP['ymax'])
+        plt.ylim(self.MAP['xmin'], self.MAP['xmax'])
+        
+        plt.pause(0.05)
         
         
         
