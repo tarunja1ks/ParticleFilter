@@ -25,7 +25,7 @@ class ParticleFilter:
             self.encoder_stamps = data["time_stamps"] # encoder time stamps
         
         self.particles=np.asarray([np.asarray([Pose(initial_pose.getPoseVector()[0],initial_pose.getPoseVector()[1],initial_pose.getPoseVector()[2]),float(1/numberofparticles)]) for i in range(numberofparticles)])
-
+        self.NumberEffective=numberOfParticles
         self.sigma_v=0.02 # the stdev for lin vel
         self.sigma_w=0.01 # the stdev for ang vel
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
@@ -48,19 +48,7 @@ class ParticleFilter:
             angle=ang_t*Tt/2
             xt1=xt_as_vector+Tt*np.asarray([vel_t*util.sinc(angle)*math.cos(xt_as_vector[2]+angle), vel_t*util.sinc(angle)*math.sin(xt_as_vector[2]+angle), ang_t ]) #X_T+1
             self.particles[i][0]=Pose(xt1[0],xt1[1],xt1[2])
-        # pf.setPose(self.particles[0][0])
     
-    # def updating_step(self, weights): # producing the pose the p(z|x and u) is handled within the ogm bressham2dmarking function to optimize computing
-    #     weights=[i/sum(weights) for i in weights] # normalizing
-    #     weighted_x=sum([self.particles[i][0].getPoseVector()[0]*weights[i] for i in range(self.numberofparticles)])
-    #     weighted_y=sum([self.particles[i][0].getPoseVector()[1]*weights[i] for i in range(self.numberofparticles)])
-        
-    #     weighted_sin=sum([math.sin(self.particles[i][0].getPoseVector()[2])*weights[i] for i in range(self.numberofparticles)])
-    #     weighted_cos=sum([math.cos(self.p   nits fine tho tbh i sit with like hella chill ppl now                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          articles[i][0].getPoseVector()[2])*weights[i] for i in range(self.numberofparticles)])
-        
-    #     weighted_angle=math.atan2(weighted_sin,weighted_cos)
-        
-    #     return Pose(weighted_x,weighted_y,weighted_angle)
     
     def update_step(self,OGM, scan):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
@@ -113,7 +101,6 @@ class ParticleFilter:
         # new_weights=[(i-max(new_weights)) for i in new_weights]
         new_weights=np.exp(new_weights)
         
-        print(new_weights)
         total_weight=0
         for i in range(self.numberofparticles):
             self.particles[i][1]*=new_weights[i] # adding the new probabilties in
@@ -124,12 +111,35 @@ class ParticleFilter:
             self.particles[i][1]/=total_weight
             
         
-        print([i[1] for i in self.particles],"--------------",total_weight)
+        print([float(i[1]) for i in self.particles],"--------------")
         
+        weighted_x=sum([self.particles[i][0].getPoseVector()[0]*self.particles[i][1] for i in range(self.numberofparticles)])
+        weighted_y=sum([self.particles[i][0].getPoseVector()[1]*self.particles[i][1] for i in range(self.numberofparticles)])
+        
+        weighted_sin=sum([math.sin(self.particles[i][0].getPoseVector()[2])*self.particles[i][1] for i in range(self.numberofparticles)])
+        weighted_cos=sum([math.cos(self.particles[i][0].getPoseVector()[2])*self.particles[i][1] for i in range(self.numberofparticles)])                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+        weighted_angle=math.atan2(weighted_sin,weighted_cos)
+        
+        return Pose(weighted_x,weighted_y,weighted_angle)
     
-    def resampling_step(self,weights):
+    def resampling_step(self):
+        self.NumberEffective=1/sum([(self.particles[i][1])**2 for i in range(len(self.particles))])
+        if(self.NumberEffective<=self.numberofparticles/3):
+            weights=[i[1] for i in self.particles]
+            cumsum = np.cumsum(weights) 
+            
+            sample_points = np.random.random() / self.numberofparticles + np.arange(self.numberofparticles) / self.numberofparticles
+            indices = np.searchsorted(cumsum, sample_points)
+            particle_index=0
+            new_particles=[]
+            for i in indices:
+                particle_index+=1
+                new_particle=np.asarray([self.particles[i][0],float(1/self.numberofparticles)])
+                new_particles.append(new_particle)
+            self.particles=np.asarray(new_particles)
+            print("RESAMPLED!!!!!","*"*50)
         
-        return True
+        
             
         
 
@@ -140,7 +150,7 @@ class ParticleFilter:
     
 
 initial_pose=Pose(0,0,0)
-numberOfParticles=3
+numberOfParticles=6
 pf=ParticleFilter(initial_pose,numberOfParticles)
 
 reads=np.load("reads.npz")['reads_data']
@@ -177,9 +187,10 @@ for event in reads:
     elif event[0]=="i": #imu
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
-        pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],pf.particles[0][0])
+        new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
+        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
         ogm.updatePlot()   
+        pf.resampling_step()
         ind+=1
         print(ind)
     else:
@@ -187,13 +198,6 @@ for event in reads:
     last_t= event[1]
     
     
-
-file=open("ogmMap.txt","w")
-for i in ogm.MAP['map']:
-    for j in i:
-        file.write(str(j)+" ")
-    file.write("\n")
-
 ogm.updatePlot()
 [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
 plt.pause(10000000)
