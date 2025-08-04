@@ -26,8 +26,8 @@ class ParticleFilter:
         
         self.particles=np.asarray([np.asarray([Pose(initial_pose.getPoseVector()[0],initial_pose.getPoseVector()[1],initial_pose.getPoseVector()[2]),float(1/numberofparticles)]) for i in range(numberofparticles)])
         self.NumberEffective=numberOfParticles
-        self.sigma_v=0.02 # the stdev for lin vel
-        self.sigma_w=0.01 # the stdev for ang vel
+        self.sigma_v=0.2 # the stdev for lin vel
+        self.sigma_w=0.10 # the stdev for ang vel
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
         
@@ -111,7 +111,7 @@ class ParticleFilter:
             self.particles[i][1]/=total_weight
             
         
-        print([float(i[1]) for i in self.particles],"--------------")
+        # print([float(i[1]) for i in self.particles],"--------------")
         
         weighted_x=sum([self.particles[i][0].getPoseVector()[0]*self.particles[i][1] for i in range(self.numberofparticles)])
         weighted_y=sum([self.particles[i][0].getPoseVector()[1]*self.particles[i][1] for i in range(self.numberofparticles)])
@@ -137,7 +137,6 @@ class ParticleFilter:
                 new_particle=np.asarray([self.particles[i][0],float(1/self.numberofparticles)])
                 new_particles.append(new_particle)
             self.particles=np.asarray(new_particles)
-            print("RESAMPLED!!!!!","*"*50)
         
         
             
@@ -150,7 +149,7 @@ class ParticleFilter:
     
 
 initial_pose=Pose(0,0,0)
-numberOfParticles=6
+numberOfParticles=100
 pf=ParticleFilter(initial_pose,numberOfParticles)
 
 reads=np.load("reads.npz")['reads_data']
@@ -188,6 +187,7 @@ for event in reads:
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
         new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
+        # print(new_Pose)
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
         ogm.updatePlot()   
         pf.resampling_step()
