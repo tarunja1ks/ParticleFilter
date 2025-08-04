@@ -26,7 +26,7 @@ class ParticleFilter:
         
         self.particles=np.asarray([np.asarray([Pose(initial_pose.getPoseVector()[0],initial_pose.getPoseVector()[1],initial_pose.getPoseVector()[2]),float(1/numberofparticles)]) for i in range(numberofparticles)])
         self.NumberEffective=numberOfParticles
-        self.sigma_v=0.2 # the stdev for lin vel
+        self.sigma_v=0.1 # the stdev for lin vel
         self.sigma_w=0.10 # the stdev for ang vel
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose

@@ -29,7 +29,7 @@ class OGM:
         extent= [self.MAP['ymin'], self.MAP['ymax'], self.MAP['xmin'], self.MAP['xmax']]
         self.ogm_map= plt.imshow(self.MAP['map'], cmap="gray", vmin=-5, vmax=5, 
                                  origin='lower', extent=extent)
-        plt.title("Occupancy Grid Map (Dynamic)")
+        plt.title("OGM graph")
         plt.xlabel("Y [meters]")
         plt.ylabel("X [meters]")
         plt.colorbar(label="Log-odds")
@@ -197,7 +197,7 @@ class OGM:
             plt.clf()  # Clear the figure
             self.ogm_map= plt.imshow(self.MAP['map'], cmap="gray", vmin=-5, vmax=5, 
                                      origin='lower', extent=current_extent)
-            plt.title("Occupancy Grid Map (Dynamic)")
+            plt.title("OGM graph")
             plt.xlabel("Y [meters]")
             plt.ylabel("X [meters]")
             plt.colorbar(label="Log-odds")
@@ -243,7 +243,7 @@ class OGM:
             plt.clf()  # Clear the figure
             self.ogm_map= plt.imshow(self.MAP['map'], cmap="gray", vmin=-5, vmax=5, 
                                      origin='lower', extent=current_extent)
-            plt.title("Occupancy Grid Map (Dynamic)")
+            plt.title("OGM graph")
             plt.xlabel("Y [meters]")
             plt.ylabel("X [meters]")
             plt.colorbar(label="Log-odds")
