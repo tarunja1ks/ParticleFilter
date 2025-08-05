@@ -74,7 +74,9 @@ class ParticleFilter:
             scans= []
             for i in range(numberofhits): 
                 scans.append(Pose(xs0[i], ys0[i], angles[i]))
+            
             scans= np.asarray(scans)
+            
             
             
             # Create sensor pose with offset from robot center
@@ -87,6 +89,11 @@ class ParticleFilter:
             # Transform scans from sensor frame to world frame
             for i in range(numberofhits):
                 scans[i].setPose(np.matmul(sensor_pose.getPose(), scans[i].getPose()))
+            
+            
+            # scans=np.matmul(sensor_pose.getPose(),scans)
+            
+            # [print(lll.getPose()) for lll in scans]
             
             # Process each scan hit
             matching_probability=0
@@ -192,7 +199,7 @@ for event in reads:
         pf.resampling_step()
         ind+=1
         print(ind)
-        break
+
     else:
         continue
     last_t= event[1]
