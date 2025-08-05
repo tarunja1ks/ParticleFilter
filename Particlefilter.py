@@ -13,7 +13,7 @@ matplotlib.use('TkAgg')
 
 class ParticleFilter:
     def __init__(self):
-        dataset = 20
+        dataset = 21
         with np.load("./Data/Imu%d.npz"%dataset) as data:
             self.imu_angular_velocity = data["angular_velocity"] # angular velocity in rad/sec
             self.imu_linear_acceleration = data["linear_acceleration"] # Accelerations in gs (gravity acceleration scaling)

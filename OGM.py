@@ -12,7 +12,7 @@ matplotlib.use('TkAgg')
 
 class OGM: 
     def __init__(self):
-        dataset=20
+        dataset=21
         # init MAP
         self.MAP= {}
         self.MAP['res']  = 0.05 #meters
@@ -87,8 +87,6 @@ class OGM:
             self.MAP['sizey']= new_sizey
             self.MAP['map']= new_map
             
-            print(f"Map expanded to: X[{new_xmin:.1f}, {new_xmax:.1f}], Y[{new_ymin:.1f}, {new_ymax:.1f}]")
-            print(f"New map size: {new_sizex} x {new_sizey}")
             expanded= True
             
         return expanded

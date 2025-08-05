@@ -2,7 +2,7 @@ import numpy as np
 import math
 
 if __name__ == '__main__':
-  dataset = 20
+  dataset = 21
   
   with np.load("./Data/Encoders%d.npz"%dataset) as data:
     encoder_counts = data["counts"] # 4 x n encoder counts
