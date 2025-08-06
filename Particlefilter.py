@@ -8,7 +8,7 @@ import time
 from fractions import Fraction
 from Pose import Pose
 import math
-from numba import njit
+
 
 matplotlib.use('TkAgg')
 
@@ -25,9 +25,11 @@ class ParticleFilter:
             self.encoder_stamps = data["time_stamps"] # encoder time stamps
         
         self.particles=np.asarray([np.asarray([Pose(initial_pose.getPoseVector()[0],initial_pose.getPoseVector()[1],initial_pose.getPoseVector()[2]),float(1/numberofparticles)]) for i in range(numberofparticles)])
+        
+        
         self.NumberEffective=numberOfParticles
-        self.sigma_v=0.1 # the stdev for lin vel
-        self.sigma_w=0.10 # the stdev for ang vel
+        self.sigma_v=0.01 # the stdev for lin vel
+        self.sigma_w=0.07 # the stdev for ang vel 
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
         
@@ -38,6 +40,7 @@ class ParticleFilter:
     
     def setPose(self,pose):
         self.xt=pose
+        
         
     def prediction_step(self,U, Tt): # in the prediction step we create the noise and update the poses
         for i in range(self.numberofparticles):
@@ -71,7 +74,10 @@ class ParticleFilter:
             scans= []
             for i in range(numberofhits): 
                 scans.append(Pose(xs0[i], ys0[i], angles[i]))
+            
             scans= np.asarray(scans)
+            
+            
             
             # Create sensor pose with offset from robot center
             current_pose_vector= hypothesis.getPoseVector()
@@ -79,9 +85,15 @@ class ParticleFilter:
                             current_pose_vector[1] + OGM.sensor_y_r, 
                             current_pose_vector[2] + OGM.sensor_yaw_r)
             
+            
             # Transform scans from sensor frame to world frame
             for i in range(numberofhits):
                 scans[i].setPose(np.matmul(sensor_pose.getPose(), scans[i].getPose()))
+            
+            
+            # scans=np.matmul(sensor_pose.getPose(),scans)
+            
+            # [print(lll.getPose()) for lll in scans]
             
             # Process each scan hit
             matching_probability=0
@@ -89,8 +101,8 @@ class ParticleFilter:
                 x, y= OGM.meter_to_cell(i.getPose())
                 rx, ry= OGM.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
                 
-                scan_intersect= util.bresenham2D(rx, ry, x, y)
-                intersection_point_count= len(scan_intersect[0])
+                # scan_intersect= util.bresenham2D(rx, ry, x, y)
+                # intersection_point_count= len(scan_intersect[0])
                 
                 matching_probability+=OGM.MAP['map'][x][y] # occupied hitpoint
                 # OGM.ogm_plot(x,y, True)
@@ -124,7 +136,7 @@ class ParticleFilter:
     
     def resampling_step(self):
         self.NumberEffective=1/sum([(self.particles[i][1])**2 for i in range(len(self.particles))])
-        if(self.NumberEffective<=self.numberofparticles/3):
+        if(self.NumberEffective<=self.numberofparticles*0.5):
             weights=[i[1] for i in self.particles]
             cumsum = np.cumsum(weights) 
             
@@ -137,19 +149,12 @@ class ParticleFilter:
                 new_particle=np.asarray([self.particles[i][0],float(1/self.numberofparticles)])
                 new_particles.append(new_particle)
             self.particles=np.asarray(new_particles)
-        
-        
-            
-        
-
-
-
 
     
     
 
 initial_pose=Pose(0,0,0)
-numberOfParticles=100
+numberOfParticles=50
 pf=ParticleFilter(initial_pose,numberOfParticles)
 
 reads=np.load("reads.npz")['reads_data']
@@ -179,6 +184,7 @@ for event in reads:
             Trajectories[i].trajectory_x.append(current_pose_vector[0])
             Trajectories[i].trajectory_y.append(current_pose_vector[1])
             Trajectories[i].trajectory_h.append(current_pose_vector[2])
+        
             
             
     if event[0]=="e": # encoder
@@ -193,6 +199,7 @@ for event in reads:
         pf.resampling_step()
         ind+=1
         print(ind)
+
     else:
         continue
     last_t= event[1]
