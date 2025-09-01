@@ -89,9 +89,9 @@ class OGM:
             
         return expanded
             
-    def meter_to_cell(self, pose_matrix):
-        x= pose_matrix[0][2]
-        y= pose_matrix[1][2]
+    def meter_to_cell(self, pose_vector):
+        x= pose_vector[0]
+        y= pose_vector[1]
         
         # Check and expand map if necessary
         self.check_and_expand_map(x, y)
@@ -127,53 +127,24 @@ class OGM:
     def probabilityToLogOdds(self,probability):
         return math.log(probability/(1-probability))
     
-    def bressenham_mark_Cells(self, scan, current_pose):
-        angles= np.arange(self.lidar_angle_min, self.lidar_angle_max + self.lidar_angle_increment, 
-                          self.lidar_angle_increment) * np.pi / 180.0
-        ranges= scan
+    def bressenham_mark_Cells(self, scan, robot_pose):
+        angles=np.arange(self.lidar_angle_min, self.lidar_angle_max+self.lidar_angle_increment,self.lidar_angle_increment)*np.pi/180
+        valid=(scan>self.lidar_range_min)&(scan<self.lidar_range_max)
+        ranges=scan[valid]
+        angles=angles[valid]
+        xs=ranges*np.cos(angles)
+        ys=ranges*np.sin(angles)
+        c,s=np.cos(robot_pose[2]),np.sin(robot_pose[2])
+        rot=np.array([[c,-s],[s,c]])
+        world=np.dot(rot,np.vstack([xs,ys]))+ (robot_pose[:2]+np.array([self.sensor_x_r,self.sensor_y_r]))[:,None]
+        sensor_cell=self.meter_to_cell(robot_pose[:2]+np.array([self.sensor_x_r,self.sensor_y_r]))
+        for i in range(world.shape[1]):
+            x_cell,y_cell=self.meter_to_cell(world[:,i])
+            line_x,line_y=util.bresenham2D(sensor_cell[0],sensor_cell[1],x_cell,y_cell)
+            for j in range(len(line_x)-1):
+                self.ogm_plot(int(line_x[j]),int(line_y[j]),False)
+            self.ogm_plot(int(line_x[-1]),int(line_y[-1]),True)
 
-        # take valid indices
-        indValid= np.logical_and((ranges < self.lidar_range_max), (ranges > self.lidar_range_min))
-        ranges= ranges[indValid]
-        angles= angles[indValid]
-        
-        # xy position in the sensor frame
-        xs0= ranges * np.cos(angles)
-        ys0= ranges * np.sin(angles)
-        
-        numberofhits= len(xs0) # number of hits in a scan
-        scans= []
-        for i in range(numberofhits): 
-            scans.append(Pose(xs0[i], ys0[i], angles[i]))
-        scans= np.asarray(scans)
-        
-        # Create sensor pose with offset from robot center
-        current_pose_vector= current_pose.getPoseVector()
-        sensor_pose= Pose(current_pose_vector[0] + self.sensor_x_r, 
-                          current_pose_vector[1] + self.sensor_y_r, 
-                          current_pose_vector[2] + self.sensor_yaw_r)
-        
-        # Transform scans from sensor frame to world frame
-        for i in range(numberofhits):
-            scans[i].setPose(np.matmul(sensor_pose.getPose(), scans[i].getPose()))
-        
-        # Process each scan hit
-        matching_probability=0
-        for i in scans:
-            x, y= self.meter_to_cell(i.getPose())
-            rx, ry= self.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
-            
-            scan_intersect= util.bresenham2D(rx, ry, x, y)
-            intersection_point_count= len(scan_intersect[0])
-            
-            # Mark free cells along the ray
-            for j in range(intersection_point_count - 1):
-                self.ogm_plot(int(scan_intersect[0][j]), int(scan_intersect[1][j]), False)
-                
-            # Mark occupied cell at the hit
-            
-            matching_probability+=self.MAP['map'][x][y]
-            self.ogm_plot(x, y, True)
             
 
        

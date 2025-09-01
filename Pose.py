@@ -11,7 +11,7 @@ class Pose:
         return self.pose
     
     def getPoseVector(self):
-        return np.asarray([self.x,self.y,self.h])
+        return np.asarray([self.x,self.y,self.h],dtype=float)
     
     def setPose(self,pose):
         self.pose=pose

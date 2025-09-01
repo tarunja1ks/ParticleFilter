@@ -13,7 +13,7 @@ import math
 matplotlib.use('TkAgg')
 
 class ParticleFilter:
-    def __init__(self, initial_pose, numberofparticles=3):
+    def __init__(self, initial_pose, OGM, numberofparticles=3):
         dataset = 20
         self.numberofparticles=numberofparticles
         with np.load("./Data/Imu%d.npz"%dataset) as data:
@@ -23,16 +23,18 @@ class ParticleFilter:
         with np.load("./Data/Encoders%d.npz"%dataset) as data:
             self.encoder_counts = data["counts"] # 4 x n encoder counts
             self.encoder_stamps = data["time_stamps"] # encoder time stamps
-        
-        self.particles=np.asarray([np.asarray([Pose(initial_pose.getPoseVector()[0],initial_pose.getPoseVector()[1],initial_pose.getPoseVector()[2]),float(1/numberofparticles)]) for i in range(numberofparticles)])
-        self.particle_poses = np.array([p[0].getPoseVector() for p in self.particles],dtype=float)
-        self.particle_weights = np.array([p[1] for p in self.particles])
+    
+        self.particle_poses= np.tile(initial_pose, (self.numberofparticles, 1)).astype(np.float64)
+        self.particle_weights= np.ones(self.numberofparticles)/self.numberofparticles
         
         self.NumberEffective=numberOfParticles
         self.sigma_v=0.01 # the stdev for lin vel
         self.sigma_w=0.07 # the stdev for ang vel 
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
+
+        self.robotTosensor= np.array([OGM.sensor_x_r, OGM.sensor_y_r, OGM.sensor_yaw_r])
+
 
         
 
@@ -68,120 +70,85 @@ class ParticleFilter:
     def update_step(self,OGM, scan):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
         new_weights=[]
-        for particle in self.particles:
-            hypothesis=particle[0]
-            angles= np.arange(OGM.lidar_angle_min, OGM.lidar_angle_max + OGM.lidar_angle_increment, 
-                          OGM.lidar_angle_increment) * np.pi / 180.0
-            ranges= scan
-            # take valid indices
-            indValid= np.logical_and((ranges < OGM.lidar_range_max), (ranges > OGM.lidar_range_min))
-            ranges= ranges[indValid]
-            angles= angles[indValid]
+        for particle in self.particle_poses:
+            sensor_pose=particle+self.robotTosensor
             
-            # xy position in the sensor frame
-            xs0= ranges * np.cos(angles)
-            ys0= ranges * np.sin(angles)
+            angles = np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
+            indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
+            ranges = scan[indValid]
+            angles = angles[indValid]
+
             
-            numberofhits= len(xs0) # number of hits in a scan
-            scans= []
-            for i in range(numberofhits): 
-                scans.append(Pose(xs0[i], ys0[i], angles[i]))
+            xs0= (ranges * np.cos(angles))
+            ys0= (ranges * np.sin(angles))
+
+            # transform vector-wise into world coord
+
+            xs_scans= sensor_pose[0]+np.cos(sensor_pose[2])*xs0-np.sin(sensor_pose[2])*ys0
+            ys_scans= sensor_pose[1]+np.sin(sensor_pose[2])*xs0+np.cos(sensor_pose[2])*ys0
+            angles_scans=sensor_pose[2]+angles
+
+            scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
             
-            scans= np.asarray(scans)
-            
-            
-            
-            # Create sensor pose with offset from robot center
-            current_pose_vector= hypothesis.getPoseVector()
-            sensor_pose= Pose(current_pose_vector[0] + OGM.sensor_x_r, 
-                            current_pose_vector[1] + OGM.sensor_y_r, 
-                            current_pose_vector[2] + OGM.sensor_yaw_r)
-            
-            
-            # Transform scans from sensor frame to world frame
-            for i in range(numberofhits):
-                scans[i].setPose(np.matmul(sensor_pose.getPose(), scans[i].getPose()))
-            
-            
-            # scans=np.matmul(sensor_pose.getPose(),scans)
-            
-            # [print(lll.getPose()) for lll in scans]
-            
-            # Process each scan hit
-            matching_probability=0
-            for i in scans:
-                x, y= OGM.meter_to_cell(i.getPose())
-                rx, ry= OGM.meter_to_cell(sensor_pose.getPose())  # Use sensor position, not robot center
-                
-                # scan_intersect= util.bresenham2D(rx, ry, x, y)
-                # intersection_point_count= len(scan_intersect[0])
-                
-                matching_probability+=OGM.MAP['map'][x][y] # occupied hitpoint
-                # OGM.ogm_plot(x,y, True)
-            
-            new_weights.append(matching_probability/numberofhits)
+            correlation=0
+            for scan in scans:
+                scan_points=util.bresenham2D(OGM.meter_to_cell(sensor_pose)[0],OGM.meter_to_cell(sensor_pose)[1],OGM.meter_to_cell(scan)[0],OGM.meter_to_cell(scan)[1])
+                correlation+=np.sum(OGM.MAP['map'][scan_points[0].astype(int), scan_points[1].astype(int)])*-1
+                hit_end_x=scan_points[0,-1]
+                hit_end_y=scan_points[1,-1]
+                correlation+=OGM.MAP['map'][int(hit_end_x),int(hit_end_y)]*2
+            new_weights.append(correlation)
+
         
-        # normalizing the new weights to prevent numerical overflow from the ogm logodds plot
-        # new_weights=[(i-max(new_weights)) for i in new_weights]
-        new_weights=np.exp(new_weights)
-        
-        total_weight=0
-        for i in range(self.numberofparticles):
-            self.particles[i][1]*=new_weights[i] # adding the new probabilties in
-            total_weight+=self.particles[i][1]
+        # normalizing the weights
+        self.particle_weights*=new_weights
+        total_weight=np.sum(self.particle_weights)
+        self.particle_weights/=total_weight
+            
         
         
-        for i in range(self.numberofparticles):
-            self.particles[i][1]/=total_weight
-            
+        weighted_x=np.sum(self.particle_poses[:, 0] * self.particle_weights)
+        weighted_y=np.sum(self.particle_poses[:, 1] * self.particle_weights)
+
+        weighted_sin=np.sum(np.sin(self.particle_poses[:, 2]) * self.particle_weights)
+        weighted_cos=np.sum(np.cos(self.particle_poses[:, 2]) * self.particle_weights)
+        weighted_angle=math.atan2(weighted_sin, weighted_cos)
         
-        # print([float(i[1]) for i in self.particles],"--------------")
-        
-        weighted_x=sum([self.particles[i][0].getPoseVector()[0]*self.particles[i][1] for i in range(self.numberofparticles)])
-        weighted_y=sum([self.particles[i][0].getPoseVector()[1]*self.particles[i][1] for i in range(self.numberofparticles)])
-        
-        weighted_sin=sum([math.sin(self.particles[i][0].getPoseVector()[2])*self.particles[i][1] for i in range(self.numberofparticles)])
-        weighted_cos=sum([math.cos(self.particles[i][0].getPoseVector()[2])*self.particles[i][1] for i in range(self.numberofparticles)])                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
-        weighted_angle=math.atan2(weighted_sin,weighted_cos)
-        
-        return Pose(weighted_x,weighted_y,weighted_angle)
+        return np.array([weighted_x,weighted_y,weighted_angle])
     
     def resampling_step(self):
-        self.NumberEffective=1/sum([(self.particles[i][1])**2 for i in range(len(self.particles))])
-        if(self.NumberEffective<=self.numberofparticles*0.5):
-            weights=[i[1] for i in self.particles]
-            cumsum = np.cumsum(weights) 
-            
-            sample_points = np.random.random() / self.numberofparticles + np.arange(self.numberofparticles) / self.numberofparticles
-            indices = np.searchsorted(cumsum, sample_points)
-            particle_index=0
-            new_particles=[]
-            for i in indices:
-                particle_index+=1
-                new_particle=np.asarray([self.particles[i][0],float(1/self.numberofparticles)])
-                new_particles.append(new_particle)
-            self.particles=np.asarray(new_particles)
+        self.NumberEffective= 1/np.sum(self.particle_weights**2)
+        if self.NumberEffective<=self.numberofparticles * 0.5:
+            cumsum= np.cumsum(self.particle_weights)
+            sample_points= np.random.random() / self.numberofparticles + np.arange(self.numberofparticles) / self.numberofparticles
+            indices= np.searchsorted(cumsum, sample_points)
+            self.particle_poses= self.particle_poses[indices]
+            self.particle_weights= np.full(self.numberofparticles, 1.0 / self.numberofparticles)
 
     
     
 
-initial_pose=Pose(0,0,0)
+initial_pose=np.array([0,0,0])
 numberOfParticles=3
-pf=ParticleFilter(initial_pose,numberOfParticles)
+
 
 reads=np.load("reads.npz")['reads_data']
 lin_vel=0
 ang_vel=0
 
-# ogm=OGM()
+ogm=OGM()
 last_t=reads[0][1]
 
-# ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.particles[0][0])
-# ogm.showPlots()
+pf=ParticleFilter(initial_pose,ogm,numberOfParticles)
 
+ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.particle_poses[0])
+ogm.showPlots()
+
+print("here")
 
 # purely localization 
-Trajectories = [Trajectory(pf.getPoseObject().getPoseVector()) for i in range(numberOfParticles)]
+
+Trajectories = [Trajectory(initial_pose) for i in range(pf.numberofparticles)]
 
 # iterating through all of the reads to update models/displays
 ind=0
@@ -197,18 +164,15 @@ for event in reads:
             Trajectories[i].trajectory_y.append(current_pose_vector[1])
             Trajectories[i].trajectory_h.append(current_pose_vector[2])
         
-            
-            
     if event[0]=="e": # encoder
         lin_vel= event[2]
     elif event[0]=="i": #imu
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
-        # new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
-        # print(new_Pose)
-        # ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
-        # ogm.updatePlot()   
-        # pf.resampling_step()
+        new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
+        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
+        ogm.updatePlot()   
+        pf.resampling_step()
         ind+=1
         print(ind)
 
