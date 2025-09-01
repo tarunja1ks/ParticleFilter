@@ -7,7 +7,6 @@ import time
 from fractions import Fraction
 from Pose import Pose
 import math
-from numba import njit
 matplotlib.use('TkAgg')
 
 class OGM: 
@@ -289,3 +288,4 @@ class Trajectory:
         self.ax_traj.relim() 
         self.ax_traj.autoscale_view() 
         self.fig_traj.canvas.draw_idle()
+        self.fig_traj.canvas.flush_events()

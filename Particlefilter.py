@@ -25,13 +25,17 @@ class ParticleFilter:
             self.encoder_stamps = data["time_stamps"] # encoder time stamps
         
         self.particles=np.asarray([np.asarray([Pose(initial_pose.getPoseVector()[0],initial_pose.getPoseVector()[1],initial_pose.getPoseVector()[2]),float(1/numberofparticles)]) for i in range(numberofparticles)])
-        
+        self.particle_poses = np.array([p[0].getPoseVector() for p in self.particles],dtype=float)
+        self.particle_weights = np.array([p[1] for p in self.particles])
         
         self.NumberEffective=numberOfParticles
         self.sigma_v=0.01 # the stdev for lin vel
         self.sigma_w=0.07 # the stdev for ang vel 
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
+
+        
+
         
     def getPose(self):
         return self.xt.getPose()
@@ -43,15 +47,23 @@ class ParticleFilter:
         
         
     def prediction_step(self,U, Tt): # in the prediction step we create the noise and update the poses
-        for i in range(self.numberofparticles):
-            noisy_U=U+np.random.multivariate_normal([0,0],self.covariance)
-            xt_as_vector=self.particles[i][0].getPoseVector()
-            vel_t=noisy_U[0]
-            ang_t=noisy_U[1]
-            angle=ang_t*Tt/2
-            xt1=xt_as_vector+Tt*np.asarray([vel_t*util.sinc(angle)*math.cos(xt_as_vector[2]+angle), vel_t*util.sinc(angle)*math.sin(xt_as_vector[2]+angle), ang_t ]) #X_T+1
-            self.particles[i][0]=Pose(xt1[0],xt1[1],xt1[2])
-    
+            noise= np.random.multivariate_normal([0,0], self.covariance, size=self.numberofparticles)
+            noisy_U= U + noise
+            vel= noisy_U[:,0]
+            ang= noisy_U[:,1]
+            theta= self.particle_poses[:,2]
+            
+            angle= ang * Tt / 2
+            sinc_angle = util.sinc(angle)
+            
+            dx= Tt * vel * sinc_angle * np.cos(theta + angle)
+            dy= Tt * vel * sinc_angle * np.sin(theta + angle)
+            dtheta= Tt * ang
+            
+            self.particle_poses[:,0] += dx
+            self.particle_poses[:,1] += dy
+            self.particle_poses[:,2] += dtheta
+            
     
     def update_step(self,OGM, scan):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
@@ -154,22 +166,23 @@ class ParticleFilter:
     
 
 initial_pose=Pose(0,0,0)
-numberOfParticles=50
+numberOfParticles=3
 pf=ParticleFilter(initial_pose,numberOfParticles)
 
 reads=np.load("reads.npz")['reads_data']
 lin_vel=0
 ang_vel=0
 
-ogm=OGM()
+# ogm=OGM()
 last_t=reads[0][1]
 
-ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.particles[0][0])
+# ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.particles[0][0])
 # ogm.showPlots()
 
 
 # purely localization 
-Trajectories=[Trajectory(pf.getPoseObject().getPoseVector())]*numberOfParticles
+Trajectories = [Trajectory(pf.getPoseObject().getPoseVector()) for i in range(numberOfParticles)]
+
 # iterating through all of the reads to update models/displays
 ind=0
 
@@ -179,8 +192,7 @@ for event in reads:
     if dt>0:
         pf.prediction_step([float(lin_vel), float(ang_vel)], dt)
         for i in range(pf.numberofparticles):
-            # update traj
-            current_pose_vector=pf.particles[i][0].getPoseVector()
+            current_pose_vector= pf.particle_poses[i]  # <- use numeric poses
             Trajectories[i].trajectory_x.append(current_pose_vector[0])
             Trajectories[i].trajectory_y.append(current_pose_vector[1])
             Trajectories[i].trajectory_h.append(current_pose_vector[2])
@@ -192,11 +204,11 @@ for event in reads:
     elif event[0]=="i": #imu
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
-        new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
+        # new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
         # print(new_Pose)
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
-        ogm.updatePlot()   
-        pf.resampling_step()
+        # ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
+        # ogm.updatePlot()   
+        # pf.resampling_step()
         ind+=1
         print(ind)
 
@@ -205,8 +217,9 @@ for event in reads:
     last_t= event[1]
     
     
-ogm.updatePlot()
 [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
+
+plt.show() 
 plt.pause(10000000)
 
 

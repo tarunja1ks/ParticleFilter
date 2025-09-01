@@ -216,9 +216,12 @@ class utils:
     plt.show(block=True)
     
   def sinc(x):
-    if(x==0.0):
-        return 1.0
-    return math.sin(x)/x
+      x= np.asarray(x)
+      result= np.ones_like(x)
+      nonzero= x != 0
+      result[nonzero]= np.sin(x[nonzero]) / x[nonzero]
+      return result
+
 
 if __name__ == '__main__':
   utils.show_lidar()
