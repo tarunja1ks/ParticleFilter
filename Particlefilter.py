@@ -7,6 +7,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import time
 from fractions import Fraction
 from Pose import Pose
+from scipy.special import logsumexp
 import math
 
 
@@ -28,8 +29,8 @@ class ParticleFilter:
         self.particle_weights= np.ones(self.numberofparticles)/self.numberofparticles
         
         self.NumberEffective=numberOfParticles
-        self.sigma_v=0.01 # the stdev for lin vel
-        self.sigma_w=0.07 # the stdev for ang vel 
+        self.sigma_v=0.003 # the stdev for lin vel
+        self.sigma_w=0.003 # the stdev for ang vel 
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
 
@@ -93,17 +94,16 @@ class ParticleFilter:
             correlation=0
             for scan in scans:
                 scan_points=util.bresenham2D(OGM.meter_to_cell(sensor_pose)[0],OGM.meter_to_cell(sensor_pose)[1],OGM.meter_to_cell(scan)[0],OGM.meter_to_cell(scan)[1])
-                correlation+=np.sum(OGM.MAP['map'][scan_points[0].astype(int), scan_points[1].astype(int)])*-1
+                correlation+=np.sum(OGM.MAP['map'][scan_points[0].astype(int), scan_points[1].astype(int)])*-0.01
                 hit_end_x=scan_points[0,-1]
                 hit_end_y=scan_points[1,-1]
-                correlation+=OGM.MAP['map'][int(hit_end_x),int(hit_end_y)]*2
+                correlation+=OGM.MAP['map'][int(hit_end_x),int(hit_end_y)]*1
             new_weights.append(correlation)
 
         
-        # normalizing the weights
-        self.particle_weights*=new_weights
-        total_weight=np.sum(self.particle_weights)
-        self.particle_weights/=total_weight
+        log_combined_weights = np.log(self.particle_weights) + new_weights
+        log_total_weight = logsumexp(log_combined_weights)
+        self.particle_weights = np.exp(log_combined_weights - log_total_weight)
             
         
         
@@ -129,7 +129,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=3
+numberOfParticles=100
 
 
 reads=np.load("reads.npz")['reads_data']
@@ -148,7 +148,7 @@ print("here")
 
 # purely localization 
 
-Trajectories = [Trajectory(initial_pose) for i in range(pf.numberofparticles)]
+# Trajectories = [Trajectory(initial_pose) for i in range(pf.numberofparticles)]
 
 # iterating through all of the reads to update models/displays
 ind=0
@@ -160,9 +160,9 @@ for event in reads:
         pf.prediction_step([float(lin_vel), float(ang_vel)], dt)
         for i in range(pf.numberofparticles):
             current_pose_vector= pf.particle_poses[i]  # <- use numeric poses
-            Trajectories[i].trajectory_x.append(current_pose_vector[0])
-            Trajectories[i].trajectory_y.append(current_pose_vector[1])
-            Trajectories[i].trajectory_h.append(current_pose_vector[2])
+            # Trajectories[i].trajectory_x.append(current_pose_vector[0])
+            # Trajectories[i].trajectory_y.append(current_pose_vector[1])
+            # Trajectories[i].trajectory_h.append(current_pose_vector[2])
         
     if event[0]=="e": # encoder
         lin_vel= event[2]
@@ -181,7 +181,7 @@ for event in reads:
     last_t= event[1]
     
     
-[i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
+# [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
 
 plt.show() 
 plt.pause(10000000)
