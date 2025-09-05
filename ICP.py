@@ -9,7 +9,7 @@ class ICP:
         diff= Source[:, np.newaxis, :] - Target[np.newaxis, :, :]
         distances= np.linalg.norm(diff, axis=2)
         closest=np.argmin(distances, axis=1)
-        return Source[closest]
+        return Target[closest]
 
     def getCentroids(self,Source,Target):
         SourceCentroid=np.mean(Source,axis=0)
@@ -37,26 +37,42 @@ plt.scatter(data['target'][:, 0], data['target'][:, 1], c='red', label='Target')
 source=data['source'].copy()
 # plotting the icp data points
 errors = []
-for i in range(82):
+
+
+R_total = np.eye(2)
+t_total = np.zeros(2)
+
+
+
+for i in range(1000):
     weightedTarget=icp.getClosest(source,data['target'])
     SourceCentroid=icp.getCentroids(source,weightedTarget)[0]
     TargetCentroid=icp.getCentroids(source,weightedTarget)[1]
     err = np.mean(np.linalg.norm(source - weightedTarget, axis=1))
     errors.append(err)
     CenteredSource=source-SourceCentroid    
-    CenteredTarget=data['target']-TargetCentroid # Nx2 to 2xN
+    CenteredTarget=weightedTarget-TargetCentroid # Nx2 to 2xN
 
     W=CenteredSource.T@CenteredTarget
 
 
     U,S,Vt=np.linalg.svd(W)
-    R=U@Vt
+    R= Vt.T@U.T
     t=TargetCentroid-R@SourceCentroid
 
     source = (R @ source.T).T + t
 
+    R_total=R @ R_total          
+    t_total=R @ t_total + t  
+
+
+source=data['source'].copy()
+source = (R_total @ source.T).T + t_total
 plt.scatter(source[:, 0], source[:, 1], c='blue', label='Source')
 
+print(R_total,t_total)
+
+print(errors[-1])
 
 print("done")
 plt.figure()

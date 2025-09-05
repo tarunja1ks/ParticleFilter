@@ -91,6 +91,8 @@ class ParticleFilter:
 
             scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
             
+            
+
             correlation=0
             for scan in scans:
                 scan_points=util.bresenham2D(OGM.meter_to_cell(sensor_pose)[0],OGM.meter_to_cell(sensor_pose)[1],OGM.meter_to_cell(scan)[0],OGM.meter_to_cell(scan)[1])
