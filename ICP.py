@@ -19,7 +19,8 @@ class ICP:
         errors = []
         R_total = np.eye(2)
         t_total = np.zeros(2)
-        for i in range(200):
+        i=0
+        while(True):
             weightedTarget=self.getClosest(Source,Target)
             SourceCentroid=self.getCentroids(Source,weightedTarget)[0]
             TargetCentroid=self.getCentroids(Source,weightedTarget)[1]
@@ -39,6 +40,9 @@ class ICP:
 
             R_total=R @ R_total          
             t_total=R @ t_total + t  
+            if i>1 and abs(errors[-1] - errors[-2]) < 0.001:
+                break
+            i+=1
         return R_total,t_total, errors[len(errors)-1]
 
 
