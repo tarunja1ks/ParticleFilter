@@ -36,11 +36,13 @@ plt.scatter(data['target'][:, 0], data['target'][:, 1], c='red', label='Target')
 
 source=data['source'].copy()
 # plotting the icp data points
-for i in range(100):
+errors = []
+for i in range(82):
     weightedTarget=icp.getClosest(source,data['target'])
     SourceCentroid=icp.getCentroids(source,weightedTarget)[0]
     TargetCentroid=icp.getCentroids(source,weightedTarget)[1]
-
+    err = np.mean(np.linalg.norm(source - weightedTarget, axis=1))
+    errors.append(err)
     CenteredSource=source-SourceCentroid    
     CenteredTarget=data['target']-TargetCentroid # Nx2 to 2xN
 
@@ -51,13 +53,22 @@ for i in range(100):
     R=U@Vt
     t=TargetCentroid-R@SourceCentroid
 
-    source=(R @ source.T).T+t
+    source = (R @ source.T).T + t
+
+plt.scatter(source[:, 0], source[:, 1], c='blue', label='Source')
 
 
 print("done")
-plt.scatter(source[:, 0], source[:, 1], c='blue', label='Source')
+plt.figure()
+plt.plot(errors, marker='o')
+plt.xlabel("Iteration")
+plt.ylabel("Mean Error")
+plt.title("ICP Error vs Iteration")
+plt.grid(True)
+
 plt.show()
 plt.pause(10000)
+
 
 
 
