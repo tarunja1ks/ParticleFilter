@@ -9,7 +9,7 @@ from fractions import Fraction
 from Pose import Pose
 from scipy.special import logsumexp
 import math
-
+from ICP import ICP
 
 matplotlib.use('TkAgg')
 
@@ -68,6 +68,33 @@ class ParticleFilter:
             self.particle_poses[:,2] += dtheta
             
     
+    def getLidarforLooptesting(self,OGM, scan):
+        LidarScanParticles = []
+        for particle in self.particle_poses:
+            sensor_pose=particle+self.robotTosensor
+            
+            angles = np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
+            indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
+            ranges = scan[indValid]
+            angles = angles[indValid]
+
+            
+            xs0= (ranges * np.cos(angles))
+            ys0= (ranges * np.sin(angles))
+
+            # transform vector-wise into world coord
+
+            xs_scans= sensor_pose[0]+np.cos(sensor_pose[2])*xs0-np.sin(sensor_pose[2])*ys0
+            ys_scans= sensor_pose[1]+np.sin(sensor_pose[2])*xs0+np.cos(sensor_pose[2])*ys0
+            angles_scans=sensor_pose[2]+angles
+
+            scans=np.stack([xs_scans,ys_scans],axis=1)
+            LidarScanParticles.append(scans)
+        LidarScanParticles=np.array(LidarScanParticles)
+        # print(LidarScanParticles.shape,"herehere")
+        return LidarScanParticles
+        
+
     def update_step(self,OGM, scan):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
         new_weights=[]
@@ -91,7 +118,7 @@ class ParticleFilter:
 
             scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
             
-            
+
 
             correlation=0
             for scan in scans:
@@ -131,7 +158,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=100
+numberOfParticles=5
 
 
 reads=np.load("reads.npz")['reads_data']
@@ -154,6 +181,20 @@ print("here")
 
 # iterating through all of the reads to update models/displays
 ind=0
+icp=ICP()
+
+
+startLoopIndex=1
+startSource=""
+endLoopIndex=100
+endTarget=""
+
+
+scan_indices=[]
+icp_rmse_history=[]
+
+
+
 
 
 for event in reads:
@@ -162,9 +203,7 @@ for event in reads:
         pf.prediction_step([float(lin_vel), float(ang_vel)], dt)
         for i in range(pf.numberofparticles):
             current_pose_vector= pf.particle_poses[i]  # <- use numeric poses
-            # Trajectories[i].trajectory_x.append(current_pose_vector[0])
-            # Trajectories[i].trajectory_y.append(current_pose_vector[1])
-            # Trajectories[i].trajectory_h.append(current_pose_vector[2])
+
         
     if event[0]=="e": # encoder
         lin_vel= event[2]
@@ -173,20 +212,42 @@ for event in reads:
     elif(event[0]=="l"): # lidar
         new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
-        ogm.updatePlot()   
+        ogm.updatePlot(new_Pose)   
         pf.resampling_step()
         ind+=1
-        print(ind)
-
+        if(ind==1):
+            startSource=pf.getLidarforLooptesting(ogm, ogm.lidar_ranges[:,int(event[2])])
+        elif(ind%5==0):
+            endTarget=pf.getLidarforLooptesting(ogm, ogm.lidar_ranges[:,int(event[2])])
+            scan_indices.append(ind)
+            error=icp.performICP(startSource[0],endTarget[0])[2]
+            print(error,ind)
+            icp_rmse_history.append(error)
+            startSource=pf.getLidarforLooptesting(ogm, ogm.lidar_ranges[:,int(event[2])])
+            
     else:
         continue
     last_t= event[1]
     
+
     
 # [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
 
 plt.show() 
+
+
+plt.figure()
+plt.plot(scan_indices, icp_rmse_history, 'b.-')  # blue line with dots
+plt.xlabel('Scan Index')
+plt.ylabel('ICP RMSE [m]')
+plt.title('ICP RMSE over Time')
+plt.xlim(0, max(scan_indices)+1)  # x-axis starts at 0
+plt.ylim(0, 1 if max(icp_rmse_history) <= 1 else max(icp_rmse_history)+0.1)  # y-axis starts 0–1, expands if needed
+plt.grid(True)
+plt.show()
+
 plt.pause(10000000)
+
 
 
     

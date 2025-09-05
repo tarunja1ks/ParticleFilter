@@ -13,6 +13,7 @@ class OGM:
     def __init__(self):
         dataset=20
         # init MAP
+        self.robot_marker = None
         self.MAP= {}
         self.MAP['res']  = 0.05 #meters
         self.MAP['xmin'] = -25  #meters
@@ -179,8 +180,11 @@ class OGM:
         
         # Update robot position if provided
         if robot_pose is not None:
-            pose_vec= robot_pose.getPoseVector()
-            self.robot_marker.set_data([pose_vec[1]], [pose_vec[0]])  # Note: x,y swapped for display
+            if self.robot_marker is None:
+                self.robot_marker = plt.plot(robot_pose[1], robot_pose[0], 'ro', markersize=8, label='Robot')[0]
+                plt.legend()
+            else:
+                self.robot_marker.set_data([robot_pose[1]], [robot_pose[0]])
         
         # Update axis limits to show full map
         plt.xlim(self.MAP['ymin'], self.MAP['ymax'])
@@ -199,40 +203,7 @@ class OGM:
         plt.show()
     
     # def mapCorrelation(): # making it again to understand it more 
-        
-    def updatePlot(self, robot_pose=None):
-        # Check if map was expanded and recreate imshow if needed
-        current_extent= [self.MAP['ymin'], self.MAP['ymax'], self.MAP['xmin'], self.MAP['xmax']]
-        
-        try:
-            # Try to update existing plot
-            self.ogm_map.set_data(self.MAP['map'])
-            self.ogm_map.set_extent(current_extent)
-        except:
-            # If map size changed, recreate the plot
-            plt.clf()  # Clear the figure
-            self.ogm_map= plt.imshow(self.MAP['map'], cmap="gray", vmin=-5, vmax=5, 
-                                     origin='lower', extent=current_extent)
-            plt.title("OGM graph")
-            plt.xlabel("Y [meters]")
-            plt.ylabel("X [meters]")
-            plt.colorbar(label="Log-odds")
-            plt.grid(True, alpha=0.3)
-            
-            # Recreate robot marker
-            self.robot_marker= plt.plot(0, 0, 'ro', markersize=8, label='Robot')[0]
-            plt.legend()
-        
-        # Update robot position if provided
-        if robot_pose is not None:
-            pose_vec= robot_pose.getPoseVector()
-            self.robot_marker.set_data([pose_vec[1]], [pose_vec[0]])  # Note: x,y swapped for display
-        
-        # Update axis limits to show full map
-        plt.xlim(self.MAP['ymin'], self.MAP['ymax'])
-        plt.ylim(self.MAP['xmin'], self.MAP['xmax'])
-        
-        plt.pause(0.05)
+
         
         
 class Trajectory:
