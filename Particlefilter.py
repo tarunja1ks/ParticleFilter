@@ -10,6 +10,7 @@ from Pose import Pose
 from scipy.special import logsumexp
 import math
 from ICP import ICP
+import gtsam
 
 matplotlib.use('TkAgg')
 
@@ -129,7 +130,7 @@ class ParticleFilter:
                 correlation+=OGM.MAP['map'][int(hit_end_x),int(hit_end_y)]*1
             new_weights.append(correlation)
 
-        
+        self.particle_weights = np.clip(self.particle_weights, 1e-12, None)
         log_combined_weights = np.log(self.particle_weights) + new_weights
         log_total_weight = logsumexp(log_combined_weights)
         self.particle_weights = np.exp(log_combined_weights - log_total_weight)
@@ -158,7 +159,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=5
+numberOfParticles=50
 
 
 reads=np.load("reads.npz")['reads_data']
@@ -186,16 +187,29 @@ icp=ICP()
 
 startLoopIndex=1
 startSource=""
-endLoopIndex=100
+endLoopIndex=1000
 endTarget=""
 
 
 scan_indices=[]
 icp_rmse_history=[]
 
+old_Pose=np.array([0,0,0])
+
+# GTSAM Initializing stuff
+initial_gtsam_pose=gtsam.Pose2(*initial_pose)
+
+graph=gtsam.NonlinearFactorGraph() # factor graph
+Prior_Noise=gtsam.noiseModel.Diagonal.Sigmas(np.array([1e-12,1e-12,1e-12]))
+graph.add(gtsam.PriorFactorPose2(0,initial_gtsam_pose,Prior_Noise))
+PF_noise=gtsam.noiseModel.Diagonal.Sigmas(np.array([0.02,0.02,0.02]))
+ICP_noise=gtsam.noiseModel.Diagonal.Sigmas(np.array([0.03,0.03,0.04]))
 
 
+values=gtsam.Values() # creating the values which will be optimized through the factor graph
+values.insert(0,initial_gtsam_pose)
 
+icp_delta_theta=0
 
 for event in reads:
     dt= float(event[1])-float(last_t)
@@ -204,27 +218,58 @@ for event in reads:
         for i in range(pf.numberofparticles):
             current_pose_vector= pf.particle_poses[i]  # <- use numeric poses
 
-        
+    
     if event[0]=="e": # encoder
         lin_vel= event[2]
     elif event[0]=="i": #imu
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
-        new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
-        ogm.updatePlot(new_Pose)   
-        pf.resampling_step()
         ind+=1
+        new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
+        
+        # calculating transformation
+        dx=new_Pose[0] - old_Pose[0]
+        dy=new_Pose[1] - old_Pose[1]
+
+        tx=math.cos(old_Pose[2]) * dx + math.sin(old_Pose[2]) * dy
+        ty=-math.sin(old_Pose[2]) * dx + math.cos(old_Pose[2]) * dy
+        delta_theta = new_Pose[2] - old_Pose[2]
+        
+        graph.add(gtsam.BetweenFactorPose2(ind-1,ind,gtsam.Pose2(tx,ty,delta_theta),PF_noise))
+        icp_delta_theta+=delta_theta
+        # adding into the gtsam values
+        values.insert(ind,gtsam.Pose2(*new_Pose))
+        
+        # Performing the ICP stuff and adding into the gtsam graph
         if(ind==1):
             startSource=pf.getLidarforLooptesting(ogm, ogm.lidar_ranges[:,int(event[2])])
+
         elif(ind%5==0):
             endTarget=pf.getLidarforLooptesting(ogm, ogm.lidar_ranges[:,int(event[2])])
             scan_indices.append(ind)
-            error=icp.performICP(startSource[0],endTarget[0])[2]
-            print(error,ind)
+            R,t,error=icp.performICP(startSource[0],endTarget[0])
             icp_rmse_history.append(error)
             startSource=pf.getLidarforLooptesting(ogm, ogm.lidar_ranges[:,int(event[2])])
             
+            # delta_theta=np.arctan2(R[1][0],R[0][0])
+            print(delta_theta)
+            if(error<=0.03):
+                graph.add(gtsam.BetweenFactorPose2(ind-5,ind,gtsam.Pose2(t[0],t[1],icp_delta_theta),ICP_noise))
+                icp_delta_theta=0
+        
+        old_Pose=new_Pose.copy()
+        
+        optimizer = gtsam.LevenbergMarquardtOptimizer(graph, values)
+        latest_poses = optimizer.optimize()
+        
+        # updating the ogm graph using the gtsam obtained pose
+        LatestPose=np.array([latest_poses.atPose2(ind).x(),latest_poses.atPose2(ind).y(),latest_poses.atPose2(ind).theta()])
+        
+        # print(LatestPose,new_Pose)
+        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],LatestPose)
+        ogm.updatePlot(LatestPose)   
+        pf.resampling_step()
+    
     else:
         continue
     last_t= event[1]
@@ -244,9 +289,9 @@ plt.title('ICP RMSE over Time')
 plt.xlim(0, max(scan_indices)+1)  # x-axis starts at 0
 plt.ylim(0, 1 if max(icp_rmse_history) <= 1 else max(icp_rmse_history)+0.1)  # y-axis starts 0–1, expands if needed
 plt.grid(True)
-plt.show()
+plt.show(block=True)
 
-plt.pause(10000000)
+
 
 
 

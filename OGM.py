@@ -151,7 +151,7 @@ class OGM:
        
 
     def showPlots(self):
-        plt.show()
+        plt.show(block=True)
     
     # def mapCorrelation(): # making it again to understand it more 
         
@@ -190,7 +190,7 @@ class OGM:
         plt.xlim(self.MAP['ymin'], self.MAP['ymax'])
         plt.ylim(self.MAP['xmin'], self.MAP['xmax'])
         
-        plt.pause(0.05)
+        plt.pause(0.01)
         
         
         

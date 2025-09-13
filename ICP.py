@@ -22,8 +22,8 @@ class ICP:
         i=0
         while(True):
             weightedTarget=self.getClosest(Source,Target)
-            SourceCentroid=self.getCentroids(Source,weightedTarget)[0]
-            TargetCentroid=self.getCentroids(Source,weightedTarget)[1]
+            SourceCentroid = np.mean(Source, axis=0)
+            TargetCentroid = np.mean(weightedTarget, axis=0)
             err = np.mean(np.linalg.norm(Source - weightedTarget, axis=1))
             errors.append(err)
             CenteredSource=Source-SourceCentroid    
