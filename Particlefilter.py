@@ -7,10 +7,8 @@ from mpl_toolkits.mplot3d import Axes3D
 import time
 from fractions import Fraction
 from Pose import Pose
-from scipy.special import logsumexp
 import math
-from ICP import ICP
-import gtsam
+
 
 matplotlib.use('TkAgg')
 
@@ -30,8 +28,8 @@ class ParticleFilter:
         self.particle_weights= np.ones(self.numberofparticles)/self.numberofparticles
         
         self.NumberEffective=numberOfParticles
-        self.sigma_v=0.003 # the stdev for lin vel
-        self.sigma_w=0.003 # the stdev for ang vel 
+        self.sigma_v=0.01 # the stdev for lin vel
+        self.sigma_w=0.07 # the stdev for ang vel 
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
 
@@ -69,33 +67,6 @@ class ParticleFilter:
             self.particle_poses[:,2] += dtheta
             
     
-    def getLidarforLooptesting(self,OGM, scan):
-        LidarScanParticles = []
-        for particle in self.particle_poses:
-            sensor_pose=particle+self.robotTosensor
-            
-            angles = np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
-            indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
-            ranges = scan[indValid]
-            angles = angles[indValid]
-
-            
-            xs0= (ranges * np.cos(angles))
-            ys0= (ranges * np.sin(angles))
-
-            # transform vector-wise into world coord
-
-            xs_scans= sensor_pose[0]+np.cos(sensor_pose[2])*xs0-np.sin(sensor_pose[2])*ys0
-            ys_scans= sensor_pose[1]+np.sin(sensor_pose[2])*xs0+np.cos(sensor_pose[2])*ys0
-            angles_scans=sensor_pose[2]+angles
-
-            scans=np.stack([xs_scans,ys_scans],axis=1)
-            LidarScanParticles.append(scans)
-        LidarScanParticles=np.array(LidarScanParticles)
-        # print(LidarScanParticles.shape,"herehere")
-        return LidarScanParticles
-        
-
     def update_step(self,OGM, scan):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
         new_weights=[]
@@ -119,21 +90,20 @@ class ParticleFilter:
 
             scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
             
-
-
             correlation=0
             for scan in scans:
                 scan_points=util.bresenham2D(OGM.meter_to_cell(sensor_pose)[0],OGM.meter_to_cell(sensor_pose)[1],OGM.meter_to_cell(scan)[0],OGM.meter_to_cell(scan)[1])
-                correlation+=np.sum(OGM.MAP['map'][scan_points[0].astype(int), scan_points[1].astype(int)])*-0.01
+                correlation+=np.sum(OGM.MAP['map'][scan_points[0].astype(int), scan_points[1].astype(int)])*-1
                 hit_end_x=scan_points[0,-1]
                 hit_end_y=scan_points[1,-1]
-                correlation+=OGM.MAP['map'][int(hit_end_x),int(hit_end_y)]*1
+                correlation+=OGM.MAP['map'][int(hit_end_x),int(hit_end_y)]*2
             new_weights.append(correlation)
 
-        self.particle_weights = np.clip(self.particle_weights, 1e-12, None)
-        log_combined_weights = np.log(self.particle_weights) + new_weights
-        log_total_weight = logsumexp(log_combined_weights)
-        self.particle_weights = np.exp(log_combined_weights - log_total_weight)
+        
+        # normalizing the weights
+        self.particle_weights*=new_weights
+        total_weight=np.sum(self.particle_weights)
+        self.particle_weights/=total_weight
             
         
         
@@ -159,7 +129,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=50
+numberOfParticles=3
 
 
 reads=np.load("reads.npz")['reads_data']
@@ -182,34 +152,7 @@ print("here")
 
 # iterating through all of the reads to update models/displays
 ind=0
-icp=ICP()
 
-
-startLoopIndex=1
-startSource=""
-endLoopIndex=1000
-endTarget=""
-
-
-scan_indices=[]
-icp_rmse_history=[]
-
-old_Pose=np.array([0,0,0])
-
-# GTSAM Initializing stuff
-initial_gtsam_pose=gtsam.Pose2(*initial_pose)
-
-graph=gtsam.NonlinearFactorGraph() # factor graph
-Prior_Noise=gtsam.noiseModel.Diagonal.Sigmas(np.array([1e-12,1e-12,1e-12]))
-graph.add(gtsam.PriorFactorPose2(0,initial_gtsam_pose,Prior_Noise))
-PF_noise=gtsam.noiseModel.Diagonal.Sigmas(np.array([0.02,0.02,0.02]))
-ICP_noise=gtsam.noiseModel.Diagonal.Sigmas(np.array([0.03,0.03,0.04]))
-
-
-values=gtsam.Values() # creating the values which will be optimized through the factor graph
-values.insert(0,initial_gtsam_pose)
-
-icp_delta_theta=0
 
 for event in reads:
     dt= float(event[1])-float(last_t)
@@ -217,82 +160,31 @@ for event in reads:
         pf.prediction_step([float(lin_vel), float(ang_vel)], dt)
         for i in range(pf.numberofparticles):
             current_pose_vector= pf.particle_poses[i]  # <- use numeric poses
-
-    
+            # Trajectories[i].trajectory_x.append(current_pose_vector[0])
+            # Trajectories[i].trajectory_y.append(current_pose_vector[1])
+            # Trajectories[i].trajectory_h.append(current_pose_vector[2])
+        
     if event[0]=="e": # encoder
         lin_vel= event[2]
     elif event[0]=="i": #imu
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
-        ind+=1
         new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
-        
-        # calculating transformation
-        dx=new_Pose[0] - old_Pose[0]
-        dy=new_Pose[1] - old_Pose[1]
-
-        tx=math.cos(old_Pose[2]) * dx + math.sin(old_Pose[2]) * dy
-        ty=-math.sin(old_Pose[2]) * dx + math.cos(old_Pose[2]) * dy
-        delta_theta = new_Pose[2] - old_Pose[2]
-        
-        graph.add(gtsam.BetweenFactorPose2(ind-1,ind,gtsam.Pose2(tx,ty,delta_theta),PF_noise))
-        icp_delta_theta+=delta_theta
-        # adding into the gtsam values
-        values.insert(ind,gtsam.Pose2(*new_Pose))
-        
-        # Performing the ICP stuff and adding into the gtsam graph
-        if(ind==1):
-            startSource=pf.getLidarforLooptesting(ogm, ogm.lidar_ranges[:,int(event[2])])
-
-        elif(ind%5==0):
-            endTarget=pf.getLidarforLooptesting(ogm, ogm.lidar_ranges[:,int(event[2])])
-            scan_indices.append(ind)
-            R,t,error=icp.performICP(startSource[0],endTarget[0])
-            icp_rmse_history.append(error)
-            startSource=pf.getLidarforLooptesting(ogm, ogm.lidar_ranges[:,int(event[2])])
-            
-            # delta_theta=np.arctan2(R[1][0],R[0][0])
-            print(delta_theta)
-            if(error<=0.03):
-                graph.add(gtsam.BetweenFactorPose2(ind-5,ind,gtsam.Pose2(t[0],t[1],icp_delta_theta),ICP_noise))
-                icp_delta_theta=0
-        
-        old_Pose=new_Pose.copy()
-        
-        optimizer = gtsam.LevenbergMarquardtOptimizer(graph, values)
-        latest_poses = optimizer.optimize()
-        
-        # updating the ogm graph using the gtsam obtained pose
-        LatestPose=np.array([latest_poses.atPose2(ind).x(),latest_poses.atPose2(ind).y(),latest_poses.atPose2(ind).theta()])
-        
-        # print(LatestPose,new_Pose)
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],LatestPose)
-        ogm.updatePlot(LatestPose)   
+        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
+        ogm.updatePlot()   
         pf.resampling_step()
-    
+        ind+=1
+        print(ind)
+
     else:
         continue
     last_t= event[1]
     
-
     
 # [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
 
 plt.show() 
-
-
-plt.figure()
-plt.plot(scan_indices, icp_rmse_history, 'b.-')  # blue line with dots
-plt.xlabel('Scan Index')
-plt.ylabel('ICP RMSE [m]')
-plt.title('ICP RMSE over Time')
-plt.xlim(0, max(scan_indices)+1)  # x-axis starts at 0
-plt.ylim(0, 1 if max(icp_rmse_history) <= 1 else max(icp_rmse_history)+0.1)  # y-axis starts 0–1, expands if needed
-plt.grid(True)
-plt.show(block=True)
-
-
-
+plt.pause(10000000)
 
 
     
