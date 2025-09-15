@@ -48,6 +48,15 @@ class utils:
     return cpr
 
 
+
+  def find_endpoint(ogm, start_pos, angle, max_range):
+    sx, sy = start_pos[0:2]
+    dx = math.cos(angle)
+    dy = math.sin(angle)
+    ex=sx+max_range*dx
+    ey=sy+max_range*dy
+    return ex, ey
+    
   def bresenham2D(sx, sy, ex, ey):
     '''
     Bresenham's ray tracing algorithm in 2D.

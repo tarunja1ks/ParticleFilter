@@ -23,6 +23,7 @@ class OGM:
         self.MAP['sizey'] = int(np.ceil((self.MAP['ymax'] - self.MAP['ymin']) / self.MAP['res'] + 1))
         self.MAP['map']= np.zeros((self.MAP['sizex'],self.MAP['sizey']),dtype=np.float32) #DATA TYPE: char or int8
         
+        self.red_dot_markers = [] 
         
         fig2= plt.figure(figsize=(10, 10))
         extent= [self.MAP['ymin'], self.MAP['ymax'], self.MAP['xmin'], self.MAP['xmax']]
@@ -106,11 +107,25 @@ class OGM:
         
         return cell_x, cell_y
     
-    def plot(self, x, y, value=1):
-        # Added bounds checking
-        if 0 <= x < self.MAP['sizex'] and 0 <= y < self.MAP['sizey']:
-            self.MAP['map'][x][y]= value
-    
+    def plot_red_dot(self, cell_x, cell_y):
+        # Convert cell coordinates back to world coordinates
+        world_x = self.MAP['xmin'] + cell_x * self.MAP['res']
+        world_y = self.MAP['ymin'] + cell_y * self.MAP['res']
+        
+        
+        # Get the axes that the ogm_map belongs to
+        ax = self.ogm_map.axes
+        
+        # Note: your plot has x,y swapped in the extent, so plot as (y,x)
+        marker, = ax.plot(world_y, world_x, 'ro', markersize=1, zorder=10)
+        self.red_dot_markers.append(marker)
+        
+        # Force immediate update on the same figure as the map
+        ax.figure.canvas.draw()
+        ax.figure.canvas.flush_events()
+        # plt.pause(0.01)
+            
+        
     def ogm_plot(self, x, y, occupied=False, scale=1, bound=10):
         if not (0 <= x < self.MAP['sizex'] and 0 <= y < self.MAP['sizey']):
             return

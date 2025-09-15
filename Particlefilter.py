@@ -30,11 +30,13 @@ class ParticleFilter:
         self.NumberEffective=numberOfParticles
         self.sigma_v=0.01 # the stdev for lin vel
         self.sigma_w=0.07 # the stdev for ang vel 
+        self.lidar_stdev=0.05
+        
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
 
         self.robotTosensor= np.array([OGM.sensor_x_r, OGM.sensor_y_r, OGM.sensor_yaw_r])
-
+        
 
         
 
@@ -74,6 +76,7 @@ class ParticleFilter:
             sensor_pose=particle+self.robotTosensor
             
             angles = np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
+            print(len(scan))
             indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
             ranges = scan[indValid]
             angles = angles[indValid]
@@ -90,31 +93,44 @@ class ParticleFilter:
 
             scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
             
-            correlation=0
-            for scan in scans:
-                scan_points=util.bresenham2D(OGM.meter_to_cell(sensor_pose)[0],OGM.meter_to_cell(sensor_pose)[1],OGM.meter_to_cell(scan)[0],OGM.meter_to_cell(scan)[1])
-                correlation+=np.sum(OGM.MAP['map'][scan_points[0].astype(int), scan_points[1].astype(int)])*-1
-                hit_end_x=scan_points[0,-1]
-                hit_end_y=scan_points[1,-1]
-                correlation+=OGM.MAP['map'][int(hit_end_x),int(hit_end_y)]*2
-            new_weights.append(correlation)
+            for i in range(len(angles)):
+                sensor_pose_cell=OGM.meter_to_cell(sensor_pose)
+                ex,ey=util.find_endpoint(OGM,sensor_pose_cell,angles[i],600) 
+                bressenham=util.bresenham2D(sensor_pose_cell[0],sensor_pose_cell[1],ex,ey)
+                distance=600
+                hit_cell=sensor_pose_cell
+                ztkstar=30
+                for j in range(len(bressenham[0])): # calculating the expected value for hit distance
+                    cx,cy=int(bressenham[0,j]),int(bressenham[1,j])
+                    if (0 <= cx < OGM.MAP['sizex'] and 0 <= cy < OGM.MAP['sizey']) and OGM.MAP['map'][cx][cy]>0:
+                        hit_cell=bressenham[0,j],bressenham[1,j]
+                        ztkstar=(((hit_cell[0]-sensor_pose_cell[0])**2+(hit_cell[1]-sensor_pose_cell[1])**2)**0.5)/20
+                        break
 
+            
+                ztk=ranges[i]# Measured value for hit distance
+                print(ztk,ztkstar)
+
+            
+            # First Distribution(measurement noise)
+            
+            # pHit=
         
         # normalizing the weights
-        self.particle_weights*=new_weights
-        total_weight=np.sum(self.particle_weights)
-        self.particle_weights/=total_weight
+        # self.particle_weights*=new_weights
+        # total_weight=np.sum(self.particle_weights)
+        # self.particle_weights/=total_weight
             
         
         
-        weighted_x=np.sum(self.particle_poses[:, 0] * self.particle_weights)
-        weighted_y=np.sum(self.particle_poses[:, 1] * self.particle_weights)
+        # weighted_x=np.sum(self.particle_poses[:, 0] * self.particle_weights)
+        # weighted_y=np.sum(self.particle_poses[:, 1] * self.particle_weights)
 
-        weighted_sin=np.sum(np.sin(self.particle_poses[:, 2]) * self.particle_weights)
-        weighted_cos=np.sum(np.cos(self.particle_poses[:, 2]) * self.particle_weights)
-        weighted_angle=math.atan2(weighted_sin, weighted_cos)
+        # weighted_sin=np.sum(np.sin(self.particle_poses[:, 2]) * self.particle_weights)
+        # weighted_cos=np.sum(np.cos(self.particle_poses[:, 2]) * self.particle_weights)
+        # weighted_angle=math.atan2(weighted_sin, weighted_cos)
         
-        return np.array([weighted_x,weighted_y,weighted_angle])
+        # return np.array([weighted_x,weighted_y,weighted_angle])
     
     def resampling_step(self):
         self.NumberEffective= 1/np.sum(self.particle_weights**2)
@@ -129,7 +145,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=3
+numberOfParticles=1
 
 
 reads=np.load("reads.npz")['reads_data']
@@ -154,6 +170,7 @@ print("here")
 ind=0
 
 
+
 for event in reads:
     dt= float(event[1])-float(last_t)
     if dt>0:
@@ -174,7 +191,8 @@ for event in reads:
         ogm.updatePlot()   
         pf.resampling_step()
         ind+=1
-        print(ind)
+        
+        break   
 
     else:
         continue
