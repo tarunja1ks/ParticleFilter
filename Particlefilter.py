@@ -4,6 +4,7 @@ import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt; plt.ion()
 from mpl_toolkits.mplot3d import Axes3D
+from scipy.stats import norm
 import time
 from fractions import Fraction
 from Pose import Pose
@@ -76,7 +77,6 @@ class ParticleFilter:
             sensor_pose=particle+self.robotTosensor
             
             angles = np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
-            print(len(scan))
             indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
             ranges = scan[indValid]
             angles = angles[indValid]
@@ -93,6 +93,7 @@ class ParticleFilter:
 
             scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
             
+            weightI=0
             for i in range(len(angles)):
                 sensor_pose_cell=OGM.meter_to_cell(sensor_pose)
                 ex,ey=util.find_endpoint(OGM,sensor_pose_cell,angles[i],600) 
@@ -109,28 +110,45 @@ class ParticleFilter:
 
             
                 ztk=ranges[i]# Measured value for hit distance
-                print(ztk,ztkstar)
-
-            
-            # First Distribution(measurement noise)
-            
-            # pHit=
+                # First Distribution(measurement noise)
+                nHit=1.0 / (norm.cdf(30, loc=ztkstar, scale=self.lidar_stdev) - norm.cdf(0, loc=ztkstar, scale=self.lidar_stdev))
+                pHit=nHit*norm.pdf(ztk,loc=ztkstar,scale=self.lidar_stdev)
+                
+                #Second Distribution(Unpexpected Objects due to dynamic Enviorenment)
+                if ztkstar <= 0:
+                    lambdaShort = 0  # or skip this beam
+                else:
+                    lambdaShort = 1 / ztkstar
+                nShort=1/(1-math.e**(-1*lambdaShort*ztkstar))
+                pShort=1-math.e**(-1*lambdaShort*ztkstar)
+                
+                # Third Distribution(Max Range)
+                # this isnt needed cuz i filter out
+                # Fourth Distirbution(Somethign completely off random)
+                # this isnt needed cuz i filter out
+                zhit=0.95
+                zshort=0.05
+                pZtk=zhit*pHit+zshort*pShort
+                weightI+=pZtk
+            new_weights.append(weightI)
+                        
+    
         
         # normalizing the weights
-        # self.particle_weights*=new_weights
-        # total_weight=np.sum(self.particle_weights)
-        # self.particle_weights/=total_weight
+        self.particle_weights=new_weights
+        total_weight=np.sum(self.particle_weights)
+        self.particle_weights/=total_weight
             
         
         
-        # weighted_x=np.sum(self.particle_poses[:, 0] * self.particle_weights)
-        # weighted_y=np.sum(self.particle_poses[:, 1] * self.particle_weights)
+        weighted_x=np.sum(self.particle_poses[:, 0] * self.particle_weights)
+        weighted_y=np.sum(self.particle_poses[:, 1] * self.particle_weights)
 
-        # weighted_sin=np.sum(np.sin(self.particle_poses[:, 2]) * self.particle_weights)
-        # weighted_cos=np.sum(np.cos(self.particle_poses[:, 2]) * self.particle_weights)
-        # weighted_angle=math.atan2(weighted_sin, weighted_cos)
+        weighted_sin=np.sum(np.sin(self.particle_poses[:, 2]) * self.particle_weights)
+        weighted_cos=np.sum(np.cos(self.particle_poses[:, 2]) * self.particle_weights)
+        weighted_angle=math.atan2(weighted_sin, weighted_cos)
         
-        # return np.array([weighted_x,weighted_y,weighted_angle])
+        return np.array([weighted_x,weighted_y,weighted_angle])
     
     def resampling_step(self):
         self.NumberEffective= 1/np.sum(self.particle_weights**2)
@@ -145,7 +163,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=1
+numberOfParticles=3
 
 
 reads=np.load("reads.npz")['reads_data']
@@ -191,8 +209,7 @@ for event in reads:
         ogm.updatePlot()   
         pf.resampling_step()
         ind+=1
-        
-        break   
+        print(ind)
 
     else:
         continue
