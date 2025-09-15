@@ -40,6 +40,12 @@ class ParticleFilter:
         
 
         
+    def normal_pdf(self,x, mu, sigma):
+        return np.exp(-0.5*((x - mu)/sigma)**2) / (sigma * np.sqrt(2*np.pi))
+    
+    def normal_cdf(self,x, mu, sigma):
+        z = (x - mu) / (sigma * np.sqrt(2))
+        return 0.5 * (1 + np.tanh(0.972 * z * (1 + 0.044715 * z**2)))
 
         
     def getPose(self):
@@ -69,10 +75,10 @@ class ParticleFilter:
             self.particle_poses[:,1] += dy
             self.particle_poses[:,2] += dtheta
             
-    
     def update_step(self,OGM, scan):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
         new_weights=[]
+        j=0
         for particle in self.particle_poses:
             sensor_pose=particle+self.robotTosensor
             
@@ -95,47 +101,59 @@ class ParticleFilter:
             
             weightI=0
             for i in range(len(angles)):
+                
                 sensor_pose_cell=OGM.meter_to_cell(sensor_pose)
                 ex,ey=util.find_endpoint(OGM,sensor_pose_cell,angles[i],600) 
                 bressenham=util.bresenham2D(sensor_pose_cell[0],sensor_pose_cell[1],ex,ey)
                 distance=600
                 hit_cell=sensor_pose_cell
+                
+                # calculating the ztkstar(first hit point in the OGM)
                 ztkstar=30
-                for j in range(len(bressenham[0])): # calculating the expected value for hit distance
-                    cx,cy=int(bressenham[0,j]),int(bressenham[1,j])
-                    if (0 <= cx < OGM.MAP['sizex'] and 0 <= cy < OGM.MAP['sizey']) and OGM.MAP['map'][cx][cy]>0:
-                        hit_cell=bressenham[0,j],bressenham[1,j]
-                        ztkstar=(((hit_cell[0]-sensor_pose_cell[0])**2+(hit_cell[1]-sensor_pose_cell[1])**2)**0.5)/20
-                        break
+                cx = bressenham[0, :].astype(int)
+                cy = bressenham[1, :].astype(int)
+
+                valid_mask = (cx >= 0) & (cx < OGM.MAP['sizex']) & (cy >= 0) & (cy < OGM.MAP['sizey'])
+
+                occupied_mask = np.zeros_like(valid_mask, dtype=bool)
+                occupied_mask[valid_mask] = OGM.MAP['map'][cx[valid_mask], cy[valid_mask]] > 0
+
+                if np.any(occupied_mask):
+                    first_idx = np.argmax(occupied_mask)
+                    hit_cell = cx[first_idx], cy[first_idx]
+                    ztkstar = np.sqrt((hit_cell[0]-sensor_pose_cell[0])**2 + (hit_cell[1]-sensor_pose_cell[1])**2) / 20.0
+    
+
 
             
                 ztk=ranges[i]# Measured value for hit distance
                 # First Distribution(measurement noise)
-                nHit=1.0 / (norm.cdf(30, loc=ztkstar, scale=self.lidar_stdev) - norm.cdf(0, loc=ztkstar, scale=self.lidar_stdev))
-                pHit=nHit*norm.pdf(ztk,loc=ztkstar,scale=self.lidar_stdev)
+                nHit=1.0 / (self.normal_cdf(30, ztkstar, self.lidar_stdev) - self.normal_cdf(0,ztkstar, self.lidar_stdev))
+                pHit=nHit*self.normal_pdf(ztk,ztkstar,self.lidar_stdev)
                 
                 #Second Distribution(Unpexpected Objects due to dynamic Enviorenment)
+                nshort=0
+                pShort=0
                 if ztkstar <= 0:
                     lambdaShort = 0  # or skip this beam
                 else:
                     lambdaShort = 1 / ztkstar
-                nShort=1/(1-math.e**(-1*lambdaShort*ztkstar))
-                pShort=1-math.e**(-1*lambdaShort*ztkstar)
+                    nShort=1/(1-math.e**(-1*lambdaShort*ztkstar))
+                    pShort=nshort*(1-math.e**(-1*lambdaShort*ztkstar))
                 
                 # Third Distribution(Max Range)
                 # this isnt needed cuz i filter out
                 # Fourth Distirbution(Somethign completely off random)
                 # this isnt needed cuz i filter out
-                zhit=0.95
-                zshort=0.05
+                zhit=0.99
+                zshort=0.01
                 pZtk=zhit*pHit+zshort*pShort
                 weightI+=pZtk
-            new_weights.append(weightI)
-                        
+            self.particle_weights[j]=weightI
+            j+=1
     
         
         # normalizing the weights
-        self.particle_weights=new_weights
         total_weight=np.sum(self.particle_weights)
         self.particle_weights/=total_weight
             
@@ -163,7 +181,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=3
+numberOfParticles=10
 
 
 reads=np.load("reads.npz")['reads_data']

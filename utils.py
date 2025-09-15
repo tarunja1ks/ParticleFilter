@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt; plt.ion()
 from mpl_toolkits.mplot3d import Axes3D
 import time
 import math
+from numba import njit
 matplotlib.use('TkAgg')
 class utils: 
   
@@ -48,7 +49,6 @@ class utils:
     return cpr
 
 
-
   def find_endpoint(ogm, start_pos, angle, max_range):
     sx, sy = start_pos[0:2]
     dx = math.cos(angle)
@@ -56,7 +56,7 @@ class utils:
     ex=sx+max_range*dx
     ey=sy+max_range*dy
     return ex, ey
-    
+  
   def bresenham2D(sx, sy, ex, ey):
     '''
     Bresenham's ray tracing algorithm in 2D.
