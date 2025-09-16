@@ -30,8 +30,8 @@ class ParticleFilter:
         self.particle_weights= np.ones(self.numberofparticles)/self.numberofparticles
         
         self.NumberEffective=numberOfParticles
-        self.sigma_v=0.01 # the stdev for lin vel
-        self.sigma_w=0.07 # the stdev for ang vel 
+        self.sigma_v=0.02 # the stdev for lin vel
+        self.sigma_w=0.03 # the stdev for ang vel 
         self.lidar_stdev=0.05
         
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
@@ -40,7 +40,6 @@ class ParticleFilter:
         self.robotTosensor= np.array([OGM.sensor_x_r, OGM.sensor_y_r, OGM.sensor_yaw_r])
         
 
-        
     def normal_pdf(self,x, mu, sigma):
         return np.exp(-0.5*((x - mu)/sigma)**2) / (sigma * np.sqrt(2*np.pi))
     
@@ -57,6 +56,7 @@ class ParticleFilter:
     
     def setPose(self,pose):
         self.xt=pose
+    
         
         
     def prediction_step(self,U, Tt): # in the prediction step we create the noise and update the poses
@@ -77,7 +77,7 @@ class ParticleFilter:
             self.particle_poses[:,1] += dy
             self.particle_poses[:,2] += dtheta
             
-            
+    
     def update_step(self,OGM, scan, max_cell_range=600):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
         new_weights=[]
@@ -117,12 +117,16 @@ class ParticleFilter:
             x_cells = np.floor(dx + cell_sensor_pose[0]).astype(int)  # shape (num_rays, max_cell_range)
             y_cells = np.floor(dy + cell_sensor_pose[1]).astype(int)
             
-            y_cells= np.clip(y_cells, 0, OGM.MAP['map'].shape[0]-1)
-            x_cells = np.clip(x_cells, 0, OGM.MAP['map'].shape[1]-1)
+            H, W = OGM.MAP['map'].shape
+            x_clamped=np.clip(x_cells, 0, H-1)
+            y_clamped=np.clip(y_cells, 0, W-1)
+            invalid=(x_cells < 0) | (x_cells >= H) | (y_cells < 0) | (y_cells >= W)
+            x_cells=np.where(invalid, x_clamped, x_cells)
+            y_cells=np.where(invalid, y_clamped, y_cells)
 
-            occupied = OGM.MAP['map'][x_cells, y_cells ]>0 # shape (num_rays, max_cell_range)
+            occupied=OGM.MAP['map'][x_cells, y_cells ]>0 # shape (num_rays, max_cell_range)
             
-            whereitis=np.where(occupied[0] == True)
+
             indices=np.argmax(occupied, axis=1)
             
             # print(indices.shape)
@@ -190,7 +194,8 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=5
+numberOfParticles=50
+
 
 reads=np.load("reads.npz")['reads_data']
 lin_vel=0
@@ -204,6 +209,7 @@ pf=ParticleFilter(initial_pose,ogm,numberOfParticles)
 ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.particle_poses[0])
 ogm.showPlots()
 
+print("here")
 
 # purely localization 
 
@@ -230,14 +236,11 @@ for event in reads:
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
         new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
-        new_Pose=np.array([0,0,0])
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
+        ogm.updatePlot()   
         pf.resampling_step()
-        ogm.updatePlot()  
         ind+=1
         print(ind)
-        # if(ind==3):
-        #     break
 
     else:
         continue
@@ -245,7 +248,7 @@ for event in reads:
     
     
 # [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
-ogm.updatePlot()  
+
 plt.show() 
 plt.pause(10000000)
 
