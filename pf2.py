@@ -8,7 +8,6 @@ from scipy.stats import norm
 import time
 from fractions import Fraction
 from Pose import Pose
-from scipy.special import erf
 import math
 
 
@@ -41,13 +40,6 @@ class ParticleFilter:
         
 
         
-    def normal_pdf(self,x, mu, sigma):
-        return np.exp(-0.5*((x - mu)/sigma)**2) / (sigma * np.sqrt(2*np.pi))
-    
-    def normal_cdf(self, x, mu, sigma):
-        z = (x - mu) / (sigma * np.sqrt(2))
-        return 0.5 * (1 + erf(z))
-
 
         
     def getPose(self):
@@ -77,11 +69,10 @@ class ParticleFilter:
             self.particle_poses[:,1] += dy
             self.particle_poses[:,2] += dtheta
             
-            
-    def update_step(self,OGM, scan, max_cell_range=600):
+    
+    def update_step(self,OGM, scan):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
         new_weights=[]
-        j=0
         for particle in self.particle_poses:
             sensor_pose=particle+self.robotTosensor
             
@@ -89,7 +80,6 @@ class ParticleFilter:
             indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
             ranges = scan[indValid]
             angles = angles[indValid]
-            
 
             
             xs0= (ranges * np.cos(angles))
@@ -103,68 +93,51 @@ class ParticleFilter:
 
             scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
             
-            ztk=ranges
-            
-            
-            
-            # displacements for the angles
-            scales=np.linspace(0,1,max_cell_range)
-            dx = (np.cos(angles_scans) * max_cell_range)[:, None] * scales
-            dy = (np.sin(angles_scans) * max_cell_range)[:, None] * scales
-            
-            cell_sensor_pose=OGM.meter_to_cell(sensor_pose)
-            
-            x_cells = np.floor(dx + cell_sensor_pose[0]).astype(int)  # shape (num_rays, max_cell_range)
-            y_cells = np.floor(dy + cell_sensor_pose[1]).astype(int)
-            
-            y_cells= np.clip(y_cells, 0, OGM.MAP['map'].shape[0]-1)
-            x_cells = np.clip(x_cells, 0, OGM.MAP['map'].shape[1]-1)
+            weightI=0
+            for i in range(len(angles)):
+                sensor_pose_cell=OGM.meter_to_cell(sensor_pose)
+                ex,ey=util.find_endpoint(OGM,sensor_pose_cell,angles[i],600) 
+                bressenham=util.bresenham2D(sensor_pose_cell[0],sensor_pose_cell[1],ex,ey)
+                distance=600
+                hit_cell=sensor_pose_cell
+                ztkstar=30
+                for j in range(len(bressenham[0])): # calculating the expected value for hit distance
+                    cx,cy=int(bressenham[0,j]),int(bressenham[1,j])
+                    if (0 <= cx < OGM.MAP['sizex'] and 0 <= cy < OGM.MAP['sizey']) and OGM.MAP['map'][cx][cy]>0:
+                        hit_cell=bressenham[0,j],bressenham[1,j]
+                        ztkstar=(((hit_cell[0]-sensor_pose_cell[0])**2+(hit_cell[1]-sensor_pose_cell[1])**2)**0.5)/20
+                        break
 
-            occupied = OGM.MAP['map'][x_cells, y_cells ]>0 # shape (num_rays, max_cell_range)
             
-            whereitis=np.where(occupied[0] == True)
-            indices=np.argmax(occupied, axis=1)
-            
-            # print(indices.shape)
-            rayrows=np.arange(x_cells.shape[0])
-            
-            xhits=x_cells[rayrows,indices]
-            yhits=y_cells[rayrows,indices]
-            
-            ztkstar=(((yhits-cell_sensor_pose[1])**2+(xhits-cell_sensor_pose[0])**2)**0.5)/20
-            
-            
-            # nhit and phit vecotrized calcuations
-            nhit = 1/(self.normal_cdf(30, ztkstar, self.lidar_stdev) - self.normal_cdf(0, ztkstar, self.lidar_stdev))
-            phit = nhit * self.normal_pdf(ztk, ztkstar, self.lidar_stdev)
-            
-            # print(phit)
-            
-            
-
-            # nhit=self.normal_cdf(30,zkstars,)
-            
-            # nshort and pshort vecotrized calcuations
-            
-            
-            
-            
-            
-            
-            
-            weightI=np.sum(phit)
-            self.particle_weights[j]=weightI
-            j+=1
-            
-            
-            
+                ztk=ranges[i]# Measured value for hit distance
+                # First Distribution(measurement noise)
+                nHit=1.0 / (norm.cdf(30, loc=ztkstar, scale=self.lidar_stdev) - norm.cdf(0, loc=ztkstar, scale=self.lidar_stdev))
+                pHit=nHit*norm.pdf(ztk,loc=ztkstar,scale=self.lidar_stdev)
+                
+                #Second Distribution(Unpexpected Objects due to dynamic Enviorenment)
+                if ztkstar <= 0:
+                    lambdaShort = 0  # or skip this beam
+                else:
+                    lambdaShort = 1 / ztkstar
+                nShort=1/(1-math.e**(-1*lambdaShort*ztkstar))
+                pShort=1-math.e**(-1*lambdaShort*ztkstar)
+                
+                # Third Distribution(Max Range)
+                # this isnt needed cuz i filter out
+                # Fourth Distirbution(Somethign completely off random)
+                # this isnt needed cuz i filter out
+                zhit=0.95
+                zshort=0.05
+                pZtk=zhit*pHit+zshort*pShort
+                weightI+=pZtk
+            new_weights.append(weightI)
+                        
     
         
         # normalizing the weights
+        self.particle_weights=new_weights
         total_weight=np.sum(self.particle_weights)
         self.particle_weights/=total_weight
-        
-        
             
         
         
@@ -190,7 +163,8 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=5
+numberOfParticles=3
+
 
 reads=np.load("reads.npz")['reads_data']
 lin_vel=0
@@ -204,6 +178,7 @@ pf=ParticleFilter(initial_pose,ogm,numberOfParticles)
 ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.particle_poses[0])
 ogm.showPlots()
 
+print("here")
 
 # purely localization 
 
@@ -230,14 +205,11 @@ for event in reads:
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
         new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
-        new_Pose=np.array([0,0,0])
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
+        ogm.updatePlot()   
         pf.resampling_step()
-        ogm.updatePlot()  
         ind+=1
         print(ind)
-        # if(ind==3):
-        #     break
 
     else:
         continue
@@ -245,7 +217,7 @@ for event in reads:
     
     
 # [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
-ogm.updatePlot()  
+
 plt.show() 
 plt.pause(10000000)
 
@@ -255,7 +227,3 @@ plt.pause(10000000)
 
 
     
-
-
-
-
