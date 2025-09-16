@@ -74,8 +74,21 @@ class ParticleFilter:
             self.particle_poses[:,0] += dx
             self.particle_poses[:,1] += dy
             self.particle_poses[:,2] += dtheta
-            
-    def update_step(self,OGM, scan):
+    def write_2d_array_as_text(self,array, filename, delimiter=' ', fmt='%d'):
+        """
+        Write a 2D NumPy array to a text file, one row per line.
+        
+        Parameters:
+        - array: 2D NumPy array
+        - filename: output file path
+        - delimiter: string to separate values (default: space)
+        - fmt: format for each element (default: integer '%d')
+        """
+        with open(filename, 'w') as f:
+            for row in array:
+                f.write(delimiter.join(fmt % val for val in row) + '\n')
+        print(f"Array saved to {filename} as text.")
+    def update_step(self,OGM, scan, max_cell_range=600):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
         new_weights=[]
         j=0
@@ -86,6 +99,8 @@ class ParticleFilter:
             indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
             ranges = scan[indValid]
             angles = angles[indValid]
+            
+            print(ranges.shape)
 
             
             xs0= (ranges * np.cos(angles))
@@ -99,58 +114,46 @@ class ParticleFilter:
 
             scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
             
-            weightI=0
-            for i in range(len(angles)):
-                
-                sensor_pose_cell=OGM.meter_to_cell(sensor_pose)
-                ex,ey=util.find_endpoint(OGM,sensor_pose_cell,angles[i],600) 
-                bressenham=util.bresenham2D(sensor_pose_cell[0],sensor_pose_cell[1],ex,ey)
-                distance=600
-                hit_cell=sensor_pose_cell
-                
-                # calculating the ztkstar(first hit point in the OGM)
-                ztkstar=30
-                cx = bressenham[0, :].astype(int)
-                cy = bressenham[1, :].astype(int)
-
-                valid_mask = (cx >= 0) & (cx < OGM.MAP['sizex']) & (cy >= 0) & (cy < OGM.MAP['sizey'])
-
-                occupied_mask = np.zeros_like(valid_mask, dtype=bool)
-                occupied_mask[valid_mask] = OGM.MAP['map'][cx[valid_mask], cy[valid_mask]] > 0
-
-                if np.any(occupied_mask):
-                    first_idx = np.argmax(occupied_mask)
-                    hit_cell = cx[first_idx], cy[first_idx]
-                    ztkstar = np.sqrt((hit_cell[0]-sensor_pose_cell[0])**2 + (hit_cell[1]-sensor_pose_cell[1])**2) / 20.0
-    
-
-
             
-                ztk=ranges[i]# Measured value for hit distance
-                # First Distribution(measurement noise)
-                nHit=1.0 / (self.normal_cdf(30, ztkstar, self.lidar_stdev) - self.normal_cdf(0,ztkstar, self.lidar_stdev))
-                pHit=nHit*self.normal_pdf(ztk,ztkstar,self.lidar_stdev)
-                
-                #Second Distribution(Unpexpected Objects due to dynamic Enviorenment)
-                nshort=0
-                pShort=0
-                if ztkstar <= 0:
-                    lambdaShort = 0  # or skip this beam
-                else:
-                    lambdaShort = 1 / ztkstar
-                    nShort=1/(1-math.e**(-1*lambdaShort*ztkstar))
-                    pShort=nshort*(1-math.e**(-1*lambdaShort*ztkstar))
-                
-                # Third Distribution(Max Range)
-                # this isnt needed cuz i filter out
-                # Fourth Distirbution(Somethign completely off random)
-                # this isnt needed cuz i filter out
-                zhit=0.99
-                zshort=0.01
-                pZtk=zhit*pHit+zshort*pShort
-                weightI+=pZtk
-            self.particle_weights[j]=weightI
-            j+=1
+            
+            
+            
+            # displacements for the angles
+            scales=np.linspace(0,1,max_cell_range)
+            dx = (np.cos(angles_scans) * max_cell_range)[:, None] * scales
+            dy = (np.sin(angles_scans) * max_cell_range)[:, None] * scales
+            
+            cell_sensor_pose=OGM.meter_to_cell(sensor_pose)
+            
+            x_cells = np.floor(dx + cell_sensor_pose[0]).astype(int)  # shape (num_rays, max_cell_range)
+            y_cells = np.floor(dy + cell_sensor_pose[1]).astype(int)
+            
+            y_cells= np.clip(y_cells, 0, OGM.MAP['map'].shape[0]-1)
+            x_cells = np.clip(x_cells, 0, OGM.MAP['map'].shape[1]-1)
+
+            occupied = OGM.MAP['map'][x_cells, y_cells ]>0 # shape (num_rays, max_cell_range)
+            
+            whereitis=np.where(occupied[0] == True)
+            indices=np.argmax(occupied, axis=1)
+            
+            # print(indices.shape)
+            rayrows=np.arange(x_cells.shape[0])
+            
+            xhits=x_cells[rayrows,indices]
+            yhits=y_cells[rayrows,indices]
+            
+            zkstars=((yhits-sensor_pose[1])**2+(xhits-sensor_pose[0])**2)**0.5
+            
+            
+            
+            
+            
+            
+            weightI=0
+            
+            
+            
+            
     
         
         # normalizing the weights
@@ -181,8 +184,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=10
-
+numberOfParticles=1
 
 reads=np.load("reads.npz")['reads_data']
 lin_vel=0
@@ -196,7 +198,6 @@ pf=ParticleFilter(initial_pose,ogm,numberOfParticles)
 ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.particle_poses[0])
 ogm.showPlots()
 
-print("here")
 
 # purely localization 
 
@@ -222,12 +223,17 @@ for event in reads:
     elif event[0]=="i": #imu
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
-        new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
+        if(ind!=0):
+            new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
+        new_Pose=np.array([0,0,0])
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
         ogm.updatePlot()   
         pf.resampling_step()
         ind+=1
         print(ind)
+        
+        if(ind==3):
+            break
 
     else:
         continue
