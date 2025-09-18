@@ -53,6 +53,8 @@ class OGM:
         expanded= False
         
         # Check if we need to expand
+        x_world=x_world.ravel()
+        
         minx=np.min(x_world)
         maxx=np.max(x_world)
         miny=np.min(y_world)
@@ -95,13 +97,11 @@ class OGM:
         return expanded
             
     def meter_to_cell(self, pose_vector):
-        print(pose_vector.shape, pose_vector,"*****")
         
         x= pose_vector[0]
         
         y= pose_vector[1]
         
-        print(x,y)
         # Check and expand map if necessary
         self.check_and_expand_map(x, y)
         
@@ -117,9 +117,10 @@ class OGM:
     
     def vector_meter_to_cell(self, pose_vector):
         
-        x= pose_vector[:,0]
+        x= pose_vector[0]
         
-        y= pose_vector[:,1]
+        y= pose_vector[1]
+        
         
         # Check and expand map if necessary
         self.check_and_expand_map(x, y)
@@ -131,8 +132,8 @@ class OGM:
         # Clamp to valid range (should rarely be needed now)
         cell_x=np.clip(cell_x,0,self.MAP['sizex'] - 1)
         cell_y=np.clip(cell_y, 0,self.MAP['sizey'] - 1)
-
         
+       
         return cell_x, cell_y
     
     
@@ -166,6 +167,20 @@ class OGM:
             odds= (1 - confidence) / confidence
         self.MAP['map'][x][y] += (math.log(odds))*scale
         self.MAP['map'][x][y]= max(-bound, min(bound, self.MAP['map'][x][y]))
+    
+    def ogm_plot_vectorized(self, x, y, occupied=False, scale=1, bound=10):
+        if (x.min() < 0 or x.max() >= self.MAP['sizex'] or y.min() < 0 or y.max() >= self.MAP['sizey']):
+            return
+        
+        
+        confidence= 0.9 # confidence level of the sensor
+        if occupied:
+            odds= confidence / (1 - confidence)
+        else:
+            odds= (1 - confidence) / confidence
+        
+        self.MAP['map'][x,y]= np.clip(self.MAP['map'][x,y]+(math.log(odds))*scale ,-bound,bound) # clipping each thing between bounds after adding log odds
+        
         
     def logOddstoProbability(self,logOdds):
         return 1 / (1 + math.exp(-logOdds))
@@ -181,18 +196,31 @@ class OGM:
         ys=ranges*np.sin(angles)
         c,s=np.cos(robot_pose[2]),np.sin(robot_pose[2])
         rot=np.array([[c,-s],[s,c]])
-        world=np.dot(rot,np.vstack([xs,ys]))+ (robot_pose[:2]+np.array([self.sensor_x_r,self.sensor_y_r]))[:,None]
+        
+        world=np.dot(rot,np.vstack([xs,ys]))+ (robot_pose[:2]+np.array([self.sensor_x_r,self.sensor_y_r]))[:,None] 
+        
+
         sensor_cell=self.meter_to_cell(robot_pose[:2]+np.array([self.sensor_x_r,self.sensor_y_r]))
-        for i in range(world.shape[1]):
-            x_cell,y_cell=self.meter_to_cell(world[:,i])
-            line_x,line_y=util.bresenham2D(sensor_cell[0],sensor_cell[1],x_cell,y_cell)
-            for j in range(len(line_x)-1):
-                self.ogm_plot(int(line_x[j]),int(line_y[j]),False)
-            self.ogm_plot(int(line_x[-1]),int(line_y[-1]),True)
+        
+        
+        x_cell,y_cell=self.vector_meter_to_cell(world)  # this is convering all the hit points into grid coordinates instead of real-world
+        
+        sx=np.repeat(sensor_cell[0], len(ranges))
+        sy=np.repeat(sensor_cell[1],len(ranges))
+        
+        
+        line_x,line_y=util.bresenham2D_vectorized(sx,sy,x_cell,y_cell)
+
+        
+        self.ogm_plot_vectorized(np.array(line_x,dtype=int),np.array(line_y,dtype=int),False)
+        
+        self.ogm_plot_vectorized(world[0],world[1],True)
+        
+        
 
             
 
-       
+    
 
     def showPlots(self):
         plt.show()

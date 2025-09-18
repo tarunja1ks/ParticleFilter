@@ -97,7 +97,58 @@ class utils:
       else:
         y = sy - np.cumsum(q)
     return np.vstack((x,y))
+  def bresenham2D_vectorized(sx, sy, ex, ey):
+      """
+      Vectorized 2D Bresenham ray tracing returning all free cells (excluding endpoint),
+      fully vectorized, no Python loops.
       
+      Inputs:
+          sx, sy, ex, ey: 1D arrays of start and end points (num_rays,)
+
+      Returns:
+          xs_all, ys_all: 1D arrays of all free cell coordinates along all rays
+          ray_idx: 1D array indicating which ray each point belongs to
+      """
+      
+      sx = np.asarray(sx)
+      sy = np.asarray(sy)
+      ex = np.asarray(ex)
+      ey = np.asarray(ey)
+      num_rays = len(sx)
+      dx = ex - sx
+      dy = ey - sy
+      
+      
+      max_steps = np.maximum(np.abs(dx), np.abs(dy)).astype(int)  # exclude +1 so endpoint removed
+      max_len = np.max(max_steps)
+      
+      # step indices (0 .. max_len-1) for all rays
+      steps = np.arange(max_len)[None, :]  # shape (1, max_len)
+      
+      # normalize step scale per ray
+      
+      scales = steps / (max_steps[:, None] + 1e-9)  # shape (num_rays, max_len)
+      
+      # mask for valid steps per ray
+      mask = steps < max_steps[:, None]  # shape (num_rays, max_len)
+      
+      # interpolate coordinates
+      x_lines = np.round(sx[:, None] + dx[:, None] * scales).astype(int)
+      y_lines = np.round(sy[:, None] + dy[:, None] * scales).astype(int)
+      
+      # flatten valid points
+      xs_all = x_lines[mask]
+      ys_all = y_lines[mask]
+      
+      # ray index for each point
+      ray_numbers = np.arange(num_rays)[:, None]
+      ray_numbers = np.broadcast_to(ray_numbers, x_lines.shape)
+      ray_idx = ray_numbers[mask]
+      return xs_all, ys_all
+
+
+
+
 
   def test_bresenham2D():
     import time
@@ -119,7 +170,20 @@ class utils:
     for i in range(0,num_rep):
       x,y = utils.bresenham2D(sx, sy, 500, 200)
     print("1000 raytraces: --- %s seconds ---" % (time.time() - start_time))
-
+    
+    
+  def vectorizeTest():
+    sx = np.array([0,0,4,5,6])
+    sy = np.array([1,1,5,5,5])
+    ex=np.array([10,9,2,2,2])
+    ey=np.array([5,6,3,4,5])
+    print(ey.shape)
+    print("Testing bresenham2D...")
+    r1 = utils.bresenham2D_vectorized(sx, sy, ex, ey)
+    print(r1[0])
+    print(r1[1])
+    
+  
   
   def test_mapCorrelation():
     angles = np.arange(-135,135.25,0.25)*np.pi/180.0
@@ -233,7 +297,8 @@ class utils:
 
 
 if __name__ == '__main__':
-  utils.show_lidar()
-  utils.test_mapCorrelation()
-  utils.test_bresenham2D()
+  # utils.show_lidar()
+  # utils.test_mapCorrelation()
+  # utils.test_bresenham2D()
+  utils.vectorizeTest()
   plt.show(block=True)
