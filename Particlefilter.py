@@ -80,89 +80,93 @@ class ParticleFilter:
     
     def update_step(self,OGM, scan, max_cell_range=600):
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
-        new_weights=[]
-        j=0
-        for particle in self.particle_poses:
-            sensor_pose=particle+self.robotTosensor
-            
-            angles = np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
-            indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
-            ranges = scan[indValid]
-            angles = angles[indValid]
-            
+        sensor_pose=self.robotTosensor+self.particle_poses
+        
+        angles = np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
+        indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
+        ranges = scan[indValid]
+        angles = angles[indValid]
+        
+        scales=np.linspace(0,1,max_cell_range)
+        
+        sensor_pose=self.particle_poses+self.robotTosensor
+        
+        
+        xs0= (ranges * np.cos(angles)) # x coordinates of hit points
+        ys0= (ranges * np.sin(angles)) # y coordinates of hit points
 
-            
-            xs0= (ranges * np.cos(angles))
-            ys0= (ranges * np.sin(angles))
 
-            # transform vector-wise into world coord
+        # transform vector-wise into world coord
+        
+        xs_scans= sensor_pose[:,0][:,None]+np.cos(sensor_pose[:,2])[:,None]*xs0[None,:]-np.sin(sensor_pose[:,2])[:,None]*ys0[None,:]
+        ys_scans= sensor_pose[:,1][:,None]+np.sin(sensor_pose[:,2])[:,None]*xs0[None,:]+np.cos(sensor_pose[:,2])[:,None]*ys0[None,:]
+        angles_scans=sensor_pose[:,2][:,None]+angles[None,:]
+        
 
-            xs_scans= sensor_pose[0]+np.cos(sensor_pose[2])*xs0-np.sin(sensor_pose[2])*ys0
-            ys_scans= sensor_pose[1]+np.sin(sensor_pose[2])*xs0+np.cos(sensor_pose[2])*ys0
-            angles_scans=sensor_pose[2]+angles
+        scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
+        
+        ztk=ranges
+            
+            
+            
+        # displacements for the angles
+        dx = (np.cos(angles_scans) * max_cell_range)[:, None] * scales[:,None]
+        dy = (np.sin(angles_scans) * max_cell_range)[:, None] * scales[:,None]
+        
+        cell_sensor_pose=OGM.vector_meter_to_cell(sensor_pose) 
+        cell_x,cell_y=cell_sensor_pose
 
-            scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
-            
-            ztk=ranges
-            
-            
-            
-            # displacements for the angles
-            scales=np.linspace(0,1,max_cell_range)
-            dx = (np.cos(angles_scans) * max_cell_range)[:, None] * scales
-            dy = (np.sin(angles_scans) * max_cell_range)[:, None] * scales
-            
-            cell_sensor_pose=OGM.meter_to_cell(sensor_pose)
-            
-            x_cells = np.floor(dx + cell_sensor_pose[0]).astype(int)  # shape (num_rays, max_cell_range)
-            y_cells = np.floor(dy + cell_sensor_pose[1]).astype(int)
-            
-            H, W = OGM.MAP['map'].shape
-            x_clamped=np.clip(x_cells, 0, H-1)
-            y_clamped=np.clip(y_cells, 0, W-1)
-            invalid=(x_cells < 0) | (x_cells >= H) | (y_cells < 0) | (y_cells >= W)
-            x_cells=np.where(invalid, x_clamped, x_cells)
-            y_cells=np.where(invalid, y_clamped, y_cells)
+        x_cells = np.floor(dx + cell_x[:, None]).astype(int)
+        y_cells = np.floor(dy + cell_y[:, None]).astype(int)
+        
+        H, W = OGM.MAP['map'].shape
+        x_clamped=np.clip(x_cells, 0, H-1)
+        y_clamped=np.clip(y_cells, 0, W-1)
+        invalid=(x_cells < 0) | (x_cells >= H) | (y_cells < 0) | (y_cells >= W)
+        x_cells=np.where(invalid, x_clamped, x_cells)
+        y_cells=np.where(invalid, y_clamped, y_cells)
 
-            occupied=OGM.MAP['map'][x_cells, y_cells ]>0 # shape (num_rays, max_cell_range)
-            
+        occupied=OGM.MAP['map'][x_cells, y_cells ]>0 # shape (num_rays, max_cell_range)
+        
 
-            indices=np.argmax(occupied, axis=1)
-            
-            # print(indices.shape)
-            rayrows=np.arange(x_cells.shape[0])
-            
-            xhits=x_cells[rayrows,indices]
-            yhits=y_cells[rayrows,indices]
-            
-            ztkstar=(((yhits-cell_sensor_pose[1])**2+(xhits-cell_sensor_pose[0])**2)**0.5)/20
-            
-            
-            # nhit and phit vecotrized calcuations
-            nhit = 1/(self.normal_cdf(30, ztkstar, self.lidar_stdev) - self.normal_cdf(0, ztkstar, self.lidar_stdev))
-            phit = nhit * self.normal_pdf(ztk, ztkstar, self.lidar_stdev)
-            
-            # print(phit)
-            
-            
-
-            # nhit=self.normal_cdf(30,zkstars,)
-            
-            # nshort and pshort vecotrized calcuations
-            
-            
-            
-            
-            
-            
-            
-            weightI=np.sum(phit)
-            self.particle_weights[j]=weightI
-            j+=1
-            
-            
-            
+        indices=np.argmax(occupied, axis=1) # first hit along each ray
+        
+        
     
+        
+        xhits=x_cells[np.arange(indices.shape[0])[:, None], indices]
+        yhits=y_cells[np.arange(indices.shape[0])[:, None], indices]  
+        
+        print(sensor_pose)
+        
+        
+        ztkstar = (((yhits - cell_y[:, None])**2 + (xhits - cell_x[:, None])**2)**0.5) / 20
+        print(ztkstar)
+        
+        # nhit and phit vecotrized calcuations
+        nhit = 1/(self.normal_cdf(30, ztkstar, self.lidar_stdev) - self.normal_cdf(0, ztkstar, self.lidar_stdev))
+        phit = nhit * self.normal_pdf(ztk, ztkstar, self.lidar_stdev)
+        
+        # print(phit)
+
+
+        # nhit=self.normal_cdf(30,zkstars,)
+
+        
+        # nshort and pshort vecotrized calcuations
+        
+        
+        
+        
+        
+        
+        
+        weightI=np.sum(phit)
+        self.particle_weights[j]=weightI
+        
+        
+        
+
         
         # normalizing the weights
         total_weight=np.sum(self.particle_weights)
@@ -194,7 +198,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=50
+numberOfParticles=2
 
 
 reads=np.load("reads.npz")['reads_data']
@@ -206,7 +210,7 @@ last_t=reads[0][1]
 
 pf=ParticleFilter(initial_pose,ogm,numberOfParticles)
 
-ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.particle_poses[0])
+# ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,0],pf.particle_poses[0])
 ogm.showPlots()
 
 print("here")
@@ -236,11 +240,12 @@ for event in reads:
         ang_vel= event[2]
     elif(event[0]=="l"): # lidar
         new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
+        # ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
         ogm.updatePlot()   
         pf.resampling_step()
         ind+=1
         print(ind)
+        break
 
     else:
         continue
@@ -248,7 +253,7 @@ for event in reads:
     
     
 # [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
-
+ogm.updatePlot()   
 plt.show() 
 plt.pause(10000000)
 

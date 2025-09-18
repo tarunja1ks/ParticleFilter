@@ -53,15 +53,19 @@ class OGM:
         expanded= False
         
         # Check if we need to expand
-        if (x_world < self.MAP['xmin'] or x_world > self.MAP['xmax'] or 
-            y_world < self.MAP['ymin'] or y_world > self.MAP['ymax']):
+        minx=np.min(x_world)
+        maxx=np.max(x_world)
+        miny=np.min(y_world)
+        maxy=np.max(y_world)
+        if (minx < self.MAP['xmin'] or maxx > self.MAP['xmax'] or 
+            miny < self.MAP['ymin'] or maxy > self.MAP['ymax']):
             
             # Calculate new bounds with some padding
             padding= 10  # meters
-            new_xmin= min(self.MAP['xmin'], x_world - padding)
-            new_xmax= max(self.MAP['xmax'], x_world + padding)
-            new_ymin= min(self.MAP['ymin'], y_world - padding)
-            new_ymax= max(self.MAP['ymax'], y_world + padding)
+            new_xmin= min(self.MAP['xmin'], minx - padding)
+            new_xmax= max(self.MAP['xmax'], maxx + padding)
+            new_ymin= min(self.MAP['ymin'], miny - padding)
+            new_ymax= max(self.MAP['ymax'], maxy + padding)
             
             # Calculate new map size
             new_sizex= int(np.ceil((new_xmax - new_xmin) / self.MAP['res'] + 1))
@@ -91,9 +95,13 @@ class OGM:
         return expanded
             
     def meter_to_cell(self, pose_vector):
+        print(pose_vector.shape, pose_vector,"*****")
+        
         x= pose_vector[0]
+        
         y= pose_vector[1]
         
+        print(x,y)
         # Check and expand map if necessary
         self.check_and_expand_map(x, y)
         
@@ -106,6 +114,28 @@ class OGM:
         cell_y= max(0, min(cell_y, self.MAP['sizey'] - 1))
         
         return cell_x, cell_y
+    
+    def vector_meter_to_cell(self, pose_vector):
+        
+        x= pose_vector[:,0]
+        
+        y= pose_vector[:,1]
+        
+        # Check and expand map if necessary
+        self.check_and_expand_map(x, y)
+
+        # Convert to cell coordinates using proper floor operation
+        cell_x= np.array(np.floor((x - self.MAP['xmin']) / self.MAP['res']), dtype=int)
+        cell_y= np.array(np.floor((y - self.MAP['ymin']) / self.MAP['res']), dtype=int)
+        
+        # Clamp to valid range (should rarely be needed now)
+        cell_x=np.clip(cell_x,0,self.MAP['sizex'] - 1)
+        cell_y=np.clip(cell_y, 0,self.MAP['sizey'] - 1)
+
+        
+        return cell_x, cell_y
+    
+    
     
     def plot_red_dot(self, cell_x, cell_y):
         # Convert cell coordinates back to world coordinates
@@ -129,7 +159,7 @@ class OGM:
     def ogm_plot(self, x, y, occupied=False, scale=1, bound=10):
         if not (0 <= x < self.MAP['sizex'] and 0 <= y < self.MAP['sizey']):
             return
-        confidence= 0.8 # confidence level of the sensor
+        confidence= 0.9 # confidence level of the sensor
         if occupied:
             odds= confidence / (1 - confidence)
         else:
