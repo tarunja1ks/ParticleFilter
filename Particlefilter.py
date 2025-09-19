@@ -9,6 +9,7 @@ import time
 from fractions import Fraction
 from Pose import Pose
 from scipy.special import erf
+from tqdm import tqdm
 import math
 
 
@@ -82,6 +83,7 @@ class ParticleFilter:
         # iterate through each particle and crosscheck with the logodds of the hits from the poses
         new_weights=[]
         j=0
+        
         for particle in self.particle_poses:
             sensor_pose=particle+self.robotTosensor
             
@@ -191,10 +193,10 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=50
+numberOfParticles=2
 
 
-reads=np.load("reads.npz")['reads_data']
+reads=np.load( "reads.npz")['reads_data']
 lin_vel=0
 ang_vel=0
 
@@ -216,35 +218,33 @@ ind=0
 
 
 
-for event in reads:
-    dt= float(event[1])-float(last_t)
-    if dt>0:
+for event in tqdm(reads, desc="Processing events"):
+    dt = float(event[1]) - float(last_t)
+    if dt > 0:
         pf.prediction_step([float(lin_vel), float(ang_vel)], dt)
         for i in range(pf.numberofparticles):
-            current_pose_vector= pf.particle_poses[i]  # <- use numeric poses
+            current_pose_vector = pf.particle_poses[i]  # numeric poses
             # Trajectories[i].trajectory_x.append(current_pose_vector[0])
             # Trajectories[i].trajectory_y.append(current_pose_vector[1])
             # Trajectories[i].trajectory_h.append(current_pose_vector[2])
-        
-    if event[0]=="e": # encoder
-        lin_vel= event[2]
-    elif event[0]=="i": #imu
-        ang_vel= event[2]
-    elif(event[0]=="l"): # lidar
-        new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:,int(event[2])] )
-        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:,int(event[2])],new_Pose)
-        ogm.updatePlot()   
-        pf.resampling_step()
-        ind+=1
-        print(ind)
 
+    if event[0] == "e":  # encoder
+        lin_vel = event[2]
+    elif event[0] == "i":  # imu
+        ang_vel = event[2]
+    elif event[0] == "l":  # lidar
+        new_Pose = pf.update_step(ogm, ogm.lidar_ranges[:, int(event[2])])
+        ogm.bressenham_mark_Cells(ogm.lidar_ranges[:, int(event[2])], new_Pose)
+        # ogm.updatePlot()
+        pf.resampling_step()
+        ind += 1
     else:
         continue
-    last_t= event[1]
+    last_t = event[1]
     
     
 # [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
-
+ogm.updatePlot() 
 plt.show() 
 plt.pause(10000000)
 

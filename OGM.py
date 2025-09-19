@@ -214,7 +214,8 @@ class OGM:
         
         self.ogm_plot_vectorized(np.array(line_x,dtype=int),np.array(line_y,dtype=int),False)
         
-        self.ogm_plot_vectorized(world[0],world[1],True)
+        world[0],world[1]=self.vector_meter_to_cell(world)
+        self.ogm_plot_vectorized(np.array(world[0],dtype=int),np.array(world[1],dtype=int),True)
         
         
 
