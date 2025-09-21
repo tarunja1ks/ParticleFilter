@@ -12,21 +12,33 @@ from scipy.special import erf
 from tqdm import tqdm
 import psutil, os
 import math
+import multiprocessing.resource_tracker as rt
+import warnings
 
 
 matplotlib.use('TkAgg')
 
+
+
+original_warn=warnings.warn
+
+def my_warn(msg, *args, **kwargs):
+    print("RESOURCE TRACKER WARNING:", msg)  # print immediately
+    original_warn(msg, *args, **kwargs)
+
+warnings.warn=my_warn
+
 class ParticleFilter:
     def __init__(self, initial_pose, OGM, numberofparticles=3):
-        dataset = 20
+        dataset=20
         self.numberofparticles=numberofparticles
         with np.load("./Data/Imu%d.npz"%dataset) as data:
-            self.imu_angular_velocity = data["angular_velocity"] # angular velocity in rad/sec
-            self.imu_linear_acceleration = data["linear_acceleration"] # Accelerations in gs (gravity acceleration scaling)
-            self.imu_stamps = data["time_stamps"]  # acquisition times of the imu measurements
+            self.imu_angular_velocity=data["angular_velocity"] # angular velocity in rad/sec
+            self.imu_linear_acceleration=data["linear_acceleration"] # Accelerations in gs (gravity acceleration scaling)
+            self.imu_stamps=data["time_stamps"]  # acquisition times of the imu measurements
         with np.load("./Data/Encoders%d.npz"%dataset) as data:
-            self.encoder_counts = data["counts"] # 4 x n encoder counts
-            self.encoder_stamps = data["time_stamps"] # encoder time stamps
+            self.encoder_counts=data["counts"] # 4 x n encoder counts
+            self.encoder_stamps=data["time_stamps"] # encoder time stamps
     
         self.particle_poses= np.tile(initial_pose, (self.numberofparticles, 1)).astype(np.float64)
         self.particle_weights= np.ones(self.numberofparticles)/self.numberofparticles
@@ -46,7 +58,7 @@ class ParticleFilter:
         return np.exp(-0.5*((x - mu)/sigma)**2) / (sigma * np.sqrt(2*np.pi))
     
     def normal_cdf(self, x, mu, sigma):
-        z = (x - mu) / (sigma * np.sqrt(2))
+        z=(x - mu) / (sigma * np.sqrt(2))
         return 0.5 * (1 + erf(z))
 
 
@@ -69,7 +81,7 @@ class ParticleFilter:
             theta= self.particle_poses[:,2]
             
             angle= ang * Tt / 2
-            sinc_angle = util.sinc(angle)
+            sinc_angle=util.sinc(angle)
             
             dx= Tt * vel * sinc_angle * np.cos(theta + angle)
             dy= Tt * vel * sinc_angle * np.sin(theta + angle)
@@ -80,116 +92,80 @@ class ParticleFilter:
             self.particle_poses[:,2] += dtheta
             
     
-    def update_step(self,OGM, scan, max_cell_range=600):
-        # iterate through each particle and crosscheck with the logodds of the hits from the poses
-        new_weights=[]
-        j=0
-        
-        # getting all the valid angles of range that is taken from the lidar
-        angles = np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
-        indValid = np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
-        ranges = scan[indValid]
-        angles = angles[indValid]
-        
-        # getting the hitpoints relative to the lidar sensor
-        xs0= (ranges * np.cos(angles)).reshape(1,-1)
-        ys0= (ranges * np.sin(angles)).reshape(1,-1)
-        
-        
-        sensor_poses=self.particle_poses+self.robotTosensor # getting the poses with relation to the sensor
+    def update_step(self, OGM, scan, max_cell_range=600):
 
-        sensor_x=sensor_poses[:,0].reshape(-1,1)
-        sensor_y=sensor_poses[:,1].reshape(-1,1)
-        sensor_angles=sensor_poses[:,2].reshape(-1,1)
-        
-        
-            
-            
-
-            # transform vector-wise into world coord relative to the lidar sensor
-            
-        # going through the particles for phit
-        xs_scans= sensor_x+np.cos(sensor_angles)*xs0-np.sin(sensor_angles)*ys0
-        ys_scans= sensor_y+np.sin(sensor_angles)*xs0+np.cos(sensor_angles)*ys0
-        angles_scans=sensor_angles+angles
-        
-
-        scans=np.stack([xs_scans,ys_scans,angles_scans],axis=1)
-        
-        ztk=ranges
-        
-        
-        
-        # displacements for the angles
-        scales=np.linspace(0,1,max_cell_range).reshape(1,1,600)
-        
-        
-        dx = (np.cos(angles_scans) * max_cell_range)[:,:,np.newaxis] * scales
-        dy = (np.sin(angles_scans) * max_cell_range)[:,:,np.newaxis] * scales
-        
-        
-        # getting sensor poses for each particle
-        cell_sensor_x,cell_sensor_y=OGM.vector_meter_to_cell(sensor_poses.T)
-        
-        
-        # adding the dxs and dys to create rays with th shape of particles, 1078, 600 which is the particles, scan angles, and then ray lengths
-        x_cells = np.floor(dx + cell_sensor_x[:,None,None]).astype(int)  # shape (num_rays, max_cell_range)
-        y_cells = np.floor(dy + cell_sensor_y[:,None,None]).astype(int)
-        
-        
-        # making sure the scanned cells are in bounds
-        H, W = OGM.MAP['map'].shape 
-        x_clamped=np.clip(x_cells, 0, H-1)
-        y_clamped=np.clip(y_cells, 0, W-1)
-        invalid=(x_cells < 0) | (x_cells >= H) | (y_cells < 0) | (y_cells >= W)
-        x_cells=np.where(invalid, x_clamped, x_cells)
-        y_cells=np.where(invalid, y_clamped, y_cells)
-
-        occupied=OGM.MAP['map'][x_cells, y_cells ]>0 # shape (num_rays, max_cell_range)
-        
-        
-        indices=np.argmax(occupied, axis=2) # getting the index of the maximum value in the ray
-        
-        rayrows=np.arange(x_cells.shape[1]) # making an numpy array of indices of different rays
-        
-
-        rows, cols = np.indices(indices.shape)
-        xhits=x_cells[rows,cols,indices]
-        yhits=y_cells[rows,cols,indices]
-        
-        # print(xhits.shape,"iewjoijj",cell_sensor_x.shape)
-        
-        ztkstar=(((yhits-cell_sensor_y[:,None])**2+(xhits-cell_sensor_x[:,None])**2)**0.5)/20
-        
-        # print(ztkstar.shape)
-        
-        # nhit and phit vecotrized calcuations
-        nhit = 1/(self.normal_cdf(30, ztkstar, self.lidar_stdev) - self.normal_cdf(0, ztkstar, self.lidar_stdev))
-        phit = nhit * self.normal_pdf(ztk, ztkstar, self.lidar_stdev)
-        
-        
-        # print(phit.shape)            
-        self.particle_weights = phit.sum(axis=1)[:, None] 
-            
-            
+        angles=np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
+        indValid=np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
+        ranges=scan[indValid]
+        angles=angles[indValid]
     
+        sensor_poses=self.particle_poses + self.robotTosensor
+        sensor_x=sensor_poses[:, 0].reshape(-1, 1)
+        sensor_y=sensor_poses[:, 1].reshape(-1, 1)
+        sensor_angles=sensor_poses[:, 2].reshape(-1, 1)
         
-        # normalizing the weights
-        total_weight=np.sum(self.particle_weights)
-        self.particle_weights/=total_weight
+        # Transform scan points to world coordinates
+        cos_sensor=np.cos(sensor_angles)
+        sin_sensor=np.sin(sensor_angles)
+        cos_angles=np.cos(angles).reshape(1, -1)
+        sin_angles=np.sin(angles).reshape(1, -1)
         
-        
-            
-        
-        
-        weighted_x=np.sum(self.particle_poses[:, 0] * self.particle_weights)
-        weighted_y=np.sum(self.particle_poses[:, 1] * self.particle_weights)
 
-        weighted_sin=np.sum(np.sin(self.particle_poses[:, 2]) * self.particle_weights)
-        weighted_cos=np.sum(np.cos(self.particle_poses[:, 2]) * self.particle_weights)
+        world_angles=sensor_angles + angles.reshape(1, -1)
+        
+        scales=np.linspace(0, 1, max_cell_range).reshape(1, 1, -1)
+        
+        dx=np.cos(world_angles)[:, :, np.newaxis] * max_cell_range * scales
+        dy=np.sin(world_angles)[:, :, np.newaxis] * max_cell_range * scales
+        
+        cell_sensor_x, cell_sensor_y=OGM.vector_meter_to_cell(sensor_poses.T)
+        
+
+        x_cells=np.floor(dx + cell_sensor_x[:, None, None]).astype(int)
+        y_cells=np.floor(dy + cell_sensor_y[:, None, None]).astype(int)
+        
+
+        H, W=OGM.MAP['map'].shape
+        x_cells=np.clip(x_cells, 0, H-1)
+        y_cells=np.clip(y_cells, 0, W-1)
+        
+
+        occupied=OGM.MAP['map'][x_cells, y_cells] > 0
+        
+        # Get indices of first occupied cell (or max range if none found)
+        first_occupied=np.argmax(occupied, axis=2)
+        no_obstacle=~np.any(occupied, axis=2)
+        first_occupied[no_obstacle]=max_cell_range - 1
+        
+
+        particle_idx, ray_idx=np.indices(first_occupied.shape)
+        x_hits=x_cells[particle_idx, ray_idx, first_occupied]
+        y_hits=y_cells[particle_idx, ray_idx, first_occupied]
+        
+        # Calculate expected distances (using your original conversion)
+        z_expected=(((y_hits-cell_sensor_y[:,None])**2+(x_hits-cell_sensor_x[:,None])**2)**0.5)/20
+        
+        # Observed distances
+        z_observed=ranges.reshape(1, -1)
+        
+        
+        log_likelihood=-0.5 * ((z_observed - z_expected) / self.lidar_stdev)**2
+        # Sum phit logs for each particle (same thing as the product of them all since its log now)
+        log_weights=np.sum(log_likelihood, axis=1)
+
+        max_log_weight=np.max(log_weights)
+        self.particle_weights=np.exp(log_weights - max_log_weight)
+        self.particle_weights /= np.sum(self.particle_weights)
+        
+
+        weighted_x=np.sum(self.particle_poses[:, 0] * self.particle_weights.flatten())
+        weighted_y=np.sum(self.particle_poses[:, 1] * self.particle_weights.flatten())
+        
+        weighted_sin=np.sum(np.sin(self.particle_poses[:, 2]) * self.particle_weights.flatten())
+        weighted_cos=np.sum(np.cos(self.particle_poses[:, 2]) * self.particle_weights.flatten())
         weighted_angle=math.atan2(weighted_sin, weighted_cos)
         
-        return np.array([weighted_x,weighted_y,weighted_angle])
+        return np.array([weighted_x, weighted_y, weighted_angle])
     
     def resampling_step(self):
         self.NumberEffective= 1/np.sum(self.particle_weights**2)
@@ -222,7 +198,7 @@ ogm.showPlots()
 
 # purely localization 
 
-# Trajectories = [Trajectory(initial_pose) for i in range(pf.numberofparticles)]
+# Trajectories=[Trajectory(initial_pose) for i in range(pf.numberofparticles)]
 
 # iterating through all of the reads to update models/displays
 ind=0
@@ -230,34 +206,35 @@ ind=0
 
 
 for event in tqdm(reads, desc="Processing events"):
-    dt = float(event[1]) - float(last_t)
+    dt=float(event[1]) - float(last_t)
     if dt > 0:
         pf.prediction_step([float(lin_vel), float(ang_vel)], dt)
         for i in range(pf.numberofparticles):
-            current_pose_vector = pf.particle_poses[i]  # numeric poses
+            current_pose_vector=pf.particle_poses[i]  # numeric poses
             # Trajectories[i].trajectory_x.append(current_pose_vector[0])
             # Trajectories[i].trajectory_y.append(current_pose_vector[1])
             # Trajectories[i].trajectory_h.append(current_pose_vector[2])
 
     if event[0] == "e":  # encoder
-        lin_vel = event[2]
-    elif event[0] == "i":  # imu
-        ang_vel = event[2]
+        lin_vel=event[2]
+    elif event[0] == "i":  # imu500
+        ang_vel=event[2]
     elif event[0] == "l":  # lidar
-        new_Pose = pf.update_step(ogm, ogm.lidar_ranges[:, int(event[2])])
+        new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:, int(event[2])])
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:, int(event[2])], new_Pose)
         # ogm.updatePlot()
         pf.resampling_step()
         ind += 1
-        # process = psutil.Process(os.getpid())
-        # mem = process.memory_info()
-        # print(f"Memory in use: {mem.rss / 1024**2:.2f} MB") 
+
     else:
         continue
-    last_t = event[1]
+    last_t=event[1]
     
     
 # [i.showPlot() for i in Trajectories] #showing the robots trajectory from encoders/imu
+
+
+    
 ogm.updatePlot() 
 plt.show() 
 plt.pause(10000000)
