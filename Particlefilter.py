@@ -92,7 +92,7 @@ class ParticleFilter:
             self.particle_poses[:,2] += dtheta
             
     
-    def update_step(self, OGM, scan, max_cell_range=600):
+    def update_step(self, OGM, scan, max_cell_range=100):
 
         angles=np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
         indValid=np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
@@ -113,18 +113,18 @@ class ParticleFilter:
 
         world_angles=sensor_angles + angles.reshape(1, -1)
         
+        
+        # the dda ray casting vectorized 
         scales=np.linspace(0, 1, max_cell_range).reshape(1, 1, -1)
         
         dx=np.cos(world_angles)[:, :, np.newaxis] * max_cell_range * scales
         dy=np.sin(world_angles)[:, :, np.newaxis] * max_cell_range * scales
         
         cell_sensor_x, cell_sensor_y=OGM.vector_meter_to_cell(sensor_poses.T)
-        
-
         x_cells=np.floor(dx + cell_sensor_x[:, None, None]).astype(int)
         y_cells=np.floor(dy + cell_sensor_y[:, None, None]).astype(int)
-        
 
+        # making all the rays in bounds
         H, W=OGM.MAP['map'].shape
         x_cells=np.clip(x_cells, 0, H-1)
         y_cells=np.clip(y_cells, 0, W-1)
@@ -134,7 +134,7 @@ class ParticleFilter:
         
         # Get indices of first occupied cell (or max range if none found)
         first_occupied=np.argmax(occupied, axis=2)
-        no_obstacle=~np.any(occupied, axis=2)
+        no_obstacle=np.any(occupied, axis=2)
         first_occupied[no_obstacle]=max_cell_range - 1
         
 
@@ -143,13 +143,13 @@ class ParticleFilter:
         y_hits=y_cells[particle_idx, ray_idx, first_occupied]
         
         # Calculate expected distances (using your original conversion)
-        z_expected=(((y_hits-cell_sensor_y[:,None])**2+(x_hits-cell_sensor_x[:,None])**2)**0.5)/20
+        ztk_star=(((y_hits-cell_sensor_y[:,None])**2+(x_hits-cell_sensor_x[:,None])**2)**0.5)/20
         
         # Observed distances
-        z_observed=ranges.reshape(1, -1)
+        ztk=ranges.reshape(1, -1)
         
         
-        log_likelihood=-0.5 * ((z_observed - z_expected) / self.lidar_stdev)**2
+        log_likelihood=-0.5 * ((ztk - ztk_star) / self.lidar_stdev)**2
         # Sum phit logs for each particle (same thing as the product of them all since its log now)
         log_weights=np.sum(log_likelihood, axis=1)
 
@@ -180,7 +180,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=500
+numberOfParticles=100
 
 
 reads=np.load( "reads.npz")['reads_data']
