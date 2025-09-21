@@ -20,13 +20,7 @@ matplotlib.use('TkAgg')
 
 
 
-original_warn=warnings.warn
 
-def my_warn(msg, *args, **kwargs):
-    print("RESOURCE TRACKER WARNING:", msg)  # print immediately
-    original_warn(msg, *args, **kwargs)
-
-warnings.warn=my_warn
 
 class ParticleFilter:
     def __init__(self, initial_pose, OGM, numberofparticles=3):
@@ -90,14 +84,19 @@ class ParticleFilter:
             self.particle_poses[:,0] += dx
             self.particle_poses[:,1] += dy
             self.particle_poses[:,2] += dtheta
-            
     
-    def update_step(self, OGM, scan, max_cell_range=100):
+        
+    def update_step(self, OGM, scan, max_cell_range=300):
 
         angles=np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
         indValid=np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
+        
         ranges=scan[indValid]
         angles=angles[indValid]
+        
+        ray_step = 2  # Use every 2nd ray
+        ranges = ranges[::ray_step]
+        angles = angles[::ray_step]
     
         sensor_poses=self.particle_poses + self.robotTosensor
         sensor_x=sensor_poses[:, 0].reshape(-1, 1)
@@ -115,21 +114,21 @@ class ParticleFilter:
         
         
         # the dda ray casting vectorized 
-        scales=np.linspace(0, 1, max_cell_range).reshape(1, 1, -1)
+        self.scales=np.linspace(0, 1, max_cell_range).reshape(1, 1, -1)
         
-        dx=np.cos(world_angles)[:, :, np.newaxis] * max_cell_range * scales
-        dy=np.sin(world_angles)[:, :, np.newaxis] * max_cell_range * scales
+        self.dx=np.cos(world_angles)[:, :, np.newaxis] * max_cell_range * self.scales
+        self.dy=np.sin(world_angles)[:, :, np.newaxis] * max_cell_range * self.scales
         
         cell_sensor_x, cell_sensor_y=OGM.vector_meter_to_cell(sensor_poses.T)
-        x_cells=np.floor(dx + cell_sensor_x[:, None, None]).astype(int)
-        y_cells=np.floor(dy + cell_sensor_y[:, None, None]).astype(int)
+        x_cells=np.floor(self.dx + cell_sensor_x[:, None, None]).astype(int)
+        y_cells=np.floor(self.dy + cell_sensor_y[:, None, None]).astype(int)
 
         # making all the rays in bounds
         H, W=OGM.MAP['map'].shape
         x_cells=np.clip(x_cells, 0, H-1)
         y_cells=np.clip(y_cells, 0, W-1)
         
-
+        
         occupied=OGM.MAP['map'][x_cells, y_cells] > 0
         
         # Get indices of first occupied cell (or max range if none found)
