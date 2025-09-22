@@ -14,7 +14,7 @@ import psutil, os
 import math
 import multiprocessing.resource_tracker as rt
 import warnings
-
+import torch
 
 matplotlib.use('TkAgg')
 
@@ -46,7 +46,7 @@ class ParticleFilter:
         self.xt=initial_pose
 
         self.robotTosensor= np.array([OGM.sensor_x_r, OGM.sensor_y_r, OGM.sensor_yaw_r])
-        
+        self.device = torch.device('mps') # using gpu
 
     def normal_pdf(self,x, mu, sigma):
         return np.exp(-0.5*((x - mu)/sigma)**2) / (sigma * np.sqrt(2*np.pi))
@@ -84,89 +84,82 @@ class ParticleFilter:
             self.particle_poses[:,0] += dx
             self.particle_poses[:,1] += dy
             self.particle_poses[:,2] += dtheta
-    
-        
-    def update_step(self, OGM, scan, max_cell_range=300):
+            
+    def update_step(self, OGM, scan, max_cell_range=600):
 
-        angles=np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0
+        angles=torch.tensor(np.linspace(OGM.lidar_angle_min, OGM.lidar_angle_max, len(scan)) * np.pi / 180.0,dtype=torch.float32, device=self.device)
         indValid=np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
         
-        ranges=scan[indValid]
-        angles=angles[indValid]
-        
-        ray_step = 2  # Use every 2nd ray
-        ranges = ranges[::ray_step]
-        angles = angles[::ray_step]
+        ranges=torch.tensor(scan[indValid],dtype=torch.float32, device=self.device)
+        angles=torch.tensor(angles[indValid],dtype=torch.float32, device=self.device)
     
-        sensor_poses=self.particle_poses + self.robotTosensor
+        sensor_poses=torch.tensor(self.particle_poses,dtype=torch.float32, device=self.device) + torch.tensor(self.robotTosensor,dtype=torch.float32, device=self.device)
         sensor_x=sensor_poses[:, 0].reshape(-1, 1)
         sensor_y=sensor_poses[:, 1].reshape(-1, 1)
         sensor_angles=sensor_poses[:, 2].reshape(-1, 1)
         
-        # Transform scan points to world coordinates
-        cos_sensor=np.cos(sensor_angles)
-        sin_sensor=np.sin(sensor_angles)
-        cos_angles=np.cos(angles).reshape(1, -1)
-        sin_angles=np.sin(angles).reshape(1, -1)
+        cos_sensor=torch.cos(sensor_angles)
+        sin_sensor=torch.sin(sensor_angles)
+        cos_angles=torch.cos(angles).reshape(1, -1)
+        sin_angles=torch.sin(angles).reshape(1, -1)
         
 
         world_angles=sensor_angles + angles.reshape(1, -1)
         
         
-        # the dda ray casting vectorized 
-        self.scales=np.linspace(0, 1, max_cell_range).reshape(1, 1, -1)
+        self.scales=torch.linspace(0, 1, max_cell_range, dtype=torch.float32, device=self.device).reshape(1, 1, -1)
         
-        self.dx=np.cos(world_angles)[:, :, np.newaxis] * max_cell_range * self.scales
-        self.dy=np.sin(world_angles)[:, :, np.newaxis] * max_cell_range * self.scales
+        self.dx=torch.cos(world_angles)[:, :, None] * max_cell_range * self.scales
+        self.dy=torch.sin(world_angles)[:, :, None] * max_cell_range * self.scales
         
-        cell_sensor_x, cell_sensor_y=OGM.vector_meter_to_cell(sensor_poses.T)
-        x_cells=np.floor(self.dx + cell_sensor_x[:, None, None]).astype(int)
-        y_cells=np.floor(self.dy + cell_sensor_y[:, None, None]).astype(int)
+        cell_sensor_x, cell_sensor_y=OGM.vector_meter_to_cell(sensor_poses.cpu().numpy().T)
+        cell_sensor_x=torch.tensor(cell_sensor_x,dtype=torch.float32, device=self.device)
+        cell_sensor_y=torch.tensor(cell_sensor_y,dtype=torch.float32, device=self.device)
+        x_cells=torch.floor(self.dx + cell_sensor_x[:, None, None]).long()
+        y_cells=torch.floor(self.dy + cell_sensor_y[:, None, None]).long()
 
-        # making all the rays in bounds
         H, W=OGM.MAP['map'].shape
-        x_cells=np.clip(x_cells, 0, H-1)
-        y_cells=np.clip(y_cells, 0, W-1)
+        x_cells=torch.clamp(x_cells, 0, H-1)
+        y_cells=torch.clamp(y_cells, 0, W-1)
         
         
-        occupied=OGM.MAP['map'][x_cells, y_cells] > 0
+        occupied=torch.tensor(OGM.MAP['map'], dtype=torch.float32, device=self.device)[x_cells, y_cells] > 0
         
-        # Get indices of first occupied cell (or max range if none found)
-        first_occupied=np.argmax(occupied, axis=2)
-        no_obstacle=np.any(occupied, axis=2)
+        first_occupied=torch.argmax(occupied.long(), dim=2)
+        no_obstacle=~torch.any(occupied, dim=2)
         first_occupied[no_obstacle]=max_cell_range - 1
         
 
-        particle_idx, ray_idx=np.indices(first_occupied.shape)
-        x_hits=x_cells[particle_idx, ray_idx, first_occupied]
-        y_hits=y_cells[particle_idx, ray_idx, first_occupied]
+        particle_idx, ray_idx=torch.meshgrid(torch.arange(first_occupied.shape[0]), torch.arange(first_occupied.shape[1]), indexing='ij')
+        x_hits=x_cells[particle_idx, ray_idx, first_occupied].float()
+        y_hits=y_cells[particle_idx, ray_idx, first_occupied].float()
         
-        # Calculate expected distances (using your original conversion)
         ztk_star=(((y_hits-cell_sensor_y[:,None])**2+(x_hits-cell_sensor_x[:,None])**2)**0.5)/20
         
-        # Observed distances
         ztk=ranges.reshape(1, -1)
         
         
         log_likelihood=-0.5 * ((ztk - ztk_star) / self.lidar_stdev)**2
-        # Sum phit logs for each particle (same thing as the product of them all since its log now)
-        log_weights=np.sum(log_likelihood, axis=1)
+        log_weights=torch.sum(log_likelihood, dim=1)
 
-        max_log_weight=np.max(log_weights)
-        self.particle_weights=np.exp(log_weights - max_log_weight)
-        self.particle_weights /= np.sum(self.particle_weights)
+        max_log_weight=torch.max(log_weights)
+        self.particle_weights=torch.exp(log_weights - max_log_weight)
+        self.particle_weights /= torch.sum(self.particle_weights)
         
 
-        weighted_x=np.sum(self.particle_poses[:, 0] * self.particle_weights.flatten())
-        weighted_y=np.sum(self.particle_poses[:, 1] * self.particle_weights.flatten())
+        weighted_x=np.sum(self.particle_poses[:, 0] * self.particle_weights.cpu().numpy().flatten())
+        weighted_y=np.sum(self.particle_poses[:, 1] * self.particle_weights.cpu().numpy().flatten())
         
-        weighted_sin=np.sum(np.sin(self.particle_poses[:, 2]) * self.particle_weights.flatten())
-        weighted_cos=np.sum(np.cos(self.particle_poses[:, 2]) * self.particle_weights.flatten())
-        weighted_angle=math.atan2(weighted_sin, weighted_cos)
+        weighted_sin=np.sum(np.sin(self.particle_poses[:, 2]) * self.particle_weights.cpu().numpy().flatten())
+        weighted_cos=np.sum(np.cos(self.particle_poses[:, 2]) * self.particle_weights.cpu().numpy().flatten())
+        weighted_angle=np.arctan2(weighted_sin, weighted_cos)
+        
+        self.particle_weights=self.particle_weights.cpu().numpy()
         
         return np.array([weighted_x, weighted_y, weighted_angle])
     
     def resampling_step(self):
+        
         self.NumberEffective= 1/np.sum(self.particle_weights**2)
         if self.NumberEffective<=self.numberofparticles * 0.5:
             cumsum= np.cumsum(self.particle_weights)
