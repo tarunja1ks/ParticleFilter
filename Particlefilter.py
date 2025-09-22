@@ -1,3 +1,4 @@
+import gc
 from OGM import OGM,Trajectory
 from utils import utils as util
 import matplotlib
@@ -38,8 +39,8 @@ class ParticleFilter:
         self.particle_weights= np.ones(self.numberofparticles)/self.numberofparticles
         
         self.NumberEffective=numberOfParticles
-        self.sigma_v=0.02 # the stdev for lin vel
-        self.sigma_w=0.03 # the stdev for ang vel 
+        self.sigma_v=0.035 # the stdev for lin vel
+        self.sigma_w=0.045 # the stdev for ang vel 
         self.lidar_stdev=0.05
         
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
@@ -155,8 +156,14 @@ class ParticleFilter:
         weighted_angle=np.arctan2(weighted_sin, weighted_cos)
         
         self.particle_weights=self.particle_weights.cpu().numpy()
+        weighted_pose=np.array([weighted_x, weighted_y, weighted_angle])
         
-        return np.array([weighted_x, weighted_y, weighted_angle])
+        # clearing cache
+        gc.collect()
+        torch.mps.empty_cache()
+        
+        
+        return weighted_pose
     
     def resampling_step(self):
         
@@ -172,7 +179,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=100
+numberOfParticles=600
 
 
 reads=np.load( "reads.npz")['reads_data']
