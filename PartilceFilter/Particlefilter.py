@@ -39,15 +39,15 @@ class ParticleFilter:
         self.particle_weights= np.ones(self.numberofparticles)/self.numberofparticles
         
         self.NumberEffective=numberOfParticles
-        self.sigma_v=0.035 # the stdev for lin vel
-        self.sigma_w=0.045 # the stdev for ang vel 
+        self.sigma_v=0.03 # the stdev for lin vel
+        self.sigma_w=0.03 # the stdev for ang vel 
         self.lidar_stdev=0.05
         
         self.covariance=np.asarray([[self.sigma_v**2,0],[0,self.sigma_w**2]])
         self.xt=initial_pose
 
         self.robotTosensor= np.array([OGM.sensor_x_r, OGM.sensor_y_r, OGM.sensor_yaw_r])
-        self.device = torch.device('mps') # using gpu
+        self.device = torch.device('cpu') # using gpu
 
     def normal_pdf(self,x, mu, sigma):
         return np.exp(-0.5*((x - mu)/sigma)**2) / (sigma * np.sqrt(2*np.pi))
@@ -92,7 +92,7 @@ class ParticleFilter:
         indValid=np.logical_and((scan < OGM.lidar_range_max), (scan > OGM.lidar_range_min))
         
         ranges=torch.tensor(scan[indValid],dtype=torch.float32, device=self.device)
-        angles=torch.tensor(angles[indValid],dtype=torch.float32, device=self.device)
+        angles=angles[indValid]
     
         sensor_poses=torch.tensor(self.particle_poses,dtype=torch.float32, device=self.device) + torch.tensor(self.robotTosensor,dtype=torch.float32, device=self.device)
         sensor_x=sensor_poses[:, 0].reshape(-1, 1)
@@ -158,9 +158,7 @@ class ParticleFilter:
         self.particle_weights=self.particle_weights.cpu().numpy()
         weighted_pose=np.array([weighted_x, weighted_y, weighted_angle])
         
-        # clearing cache
-        gc.collect()
-        torch.mps.empty_cache()
+
         
         
         return weighted_pose
@@ -168,7 +166,7 @@ class ParticleFilter:
     def resampling_step(self):
         
         self.NumberEffective= 1/np.sum(self.particle_weights**2)
-        if self.NumberEffective<=self.numberofparticles * 0.5:
+        if self.NumberEffective<=self.numberofparticles * 0.3:
             cumsum= np.cumsum(self.particle_weights)
             sample_points= np.random.random() / self.numberofparticles + np.arange(self.numberofparticles) / self.numberofparticles
             indices= np.searchsorted(cumsum, sample_points)
@@ -179,7 +177,7 @@ class ParticleFilter:
     
 
 initial_pose=np.array([0,0,0])
-numberOfParticles=600
+numberOfParticles=100
 
 
 reads=np.load( "reads.npz")['reads_data']
@@ -219,11 +217,17 @@ for event in tqdm(reads, desc="Processing events"):
     elif event[0] == "i":  # imu500
         ang_vel=event[2]
     elif event[0] == "l":  # lidar
-        new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:, int(event[2])])
+        try:
+            new_Pose=pf.update_step(ogm, ogm.lidar_ranges[:, int(event[2])])
+        except:
+            continue
         ogm.bressenham_mark_Cells(ogm.lidar_ranges[:, int(event[2])], new_Pose)
         # ogm.updatePlot()
         pf.resampling_step()
         ind += 1
+        if(ind%1==0):
+            gc.collect()
+            torch.mps.empty_cache()
 
     else:
         continue
