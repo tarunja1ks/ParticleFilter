@@ -97,7 +97,6 @@ class OGM:
         return expanded
             
     def meter_to_cell(self, pose_vector):
-        
         x= pose_vector[0]
         
         y= pose_vector[1]
@@ -172,7 +171,6 @@ class OGM:
         if (x.min() < 0 or x.max() >= self.MAP['sizex'] or y.min() < 0 or y.max() >= self.MAP['sizey']):
             return
         
-        
         confidence= 0.9 # confidence level of the sensor
         if occupied:
             odds= confidence / (1 - confidence)
@@ -199,9 +197,7 @@ class OGM:
         
         world=np.dot(rot,np.vstack([xs,ys]))+ (robot_pose[:2]+np.array([self.sensor_x_r,self.sensor_y_r]))[:,None] 
         
-
         sensor_cell=self.meter_to_cell(robot_pose[:2]+np.array([self.sensor_x_r,self.sensor_y_r]))
-        
         
         x_cell,y_cell=self.vector_meter_to_cell(world)  # this is convering all the hit points into grid coordinates instead of real-world
         
